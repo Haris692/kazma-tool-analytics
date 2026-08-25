@@ -32,6 +32,7 @@ jobs:
         run: |
           node test/run.js
           node test/slim.js
+          node test/dir.js
 
       - uses: actions/setup-python@v5
         with:

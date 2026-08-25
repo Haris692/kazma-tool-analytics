@@ -16,6 +16,9 @@
     duelB: null,
     per90: false,
     netTeam: null,
+    pov: null,
+    povTouched: false,
+    theme: null,
     pending: { events: null, lineups: null }
   };
 
@@ -53,6 +56,41 @@
       (diff > 0 ? '+' : '') + f(diff, d) + '</span>';
   }
 
+  /* ----------------------------------------------------- rendu de l'ecart
+     Trois lectures, selon le point de vue et la mesure :
+       - pas de point de vue    -> pastille de l'equipe devant + ecart, en gris
+       - mesure neutre (dir 0)  -> idem : le rapport ne juge pas
+       - mesure orientee        -> fleche avantage/deficit + ecart en valeur
+                                   absolue, teinte vert ou rouge
+
+     La fleche est l'encodage principal, la couleur seulement un renfort :
+     vert et rouge sont a DE 4,1 l'un de l'autre en deuteranopie. Le signe
+     porte le sens, et un titre au survol le redit en toutes lettres.        */
+  function delta(mine, theirs, dir, d, povSet, chipSide) {
+    var diff = mine - theirs;
+    if (Math.abs(diff) < 1e-9) return '<span class="delta flat" title="a egalite">=</span>';
+
+    if (!povSet || !dir) {
+      // Sans point de vue la pastille dit qui mene ; sur une mesure neutre
+      // elle dit seulement qui en a fait plus, et le titre le precise.
+      return '<span class="delta mute" title="' +
+        (dir ? 'meilleur sur cette mesure' : 'ecart brut : mesure de volume ou de contexte, sans jugement') +
+        '"><span class="chip ' + chipSide + '"></span>' + f(Math.abs(diff), d) + '</span>';
+    }
+    var better = dir > 0 ? diff > 0 : diff < 0;
+    return '<span class="delta ' + (better ? 'up' : 'down') + '" title="' +
+      (better ? 'avantage' : 'deficit') + ' de ' + f(Math.abs(diff), d) + '">' +
+      '<span class="arw" aria-hidden="true">' + (better ? '▲' : '▼') + '</span>' +
+      f(Math.abs(diff), d) + '</span>';
+  }
+
+  // La pastille de l'ecart designe le meilleur quand la mesure a un sens,
+  // et sinon simplement celui qui en a fait le plus.
+  function chipFor(na, nb, dir) {
+    if (dir) return (dir > 0 ? na > nb : na < nb) ? 'a' : 'b';
+    return na > nb ? 'a' : 'b';
+  }
+
   function shortName(n) {
     if (!n) return '?';
     var parts = String(n).split(' ');
@@ -61,69 +99,79 @@
   }
 
   /* ------------------------------------------------- definition des mesures
-     inv : la valeur basse est la meilleure (PPDA, ballons perdus, fautes).   */
+     dir : direction du merite, le coeur de la lecture du rapport.
+        1  la valeur haute est la meilleure
+       -1  la valeur basse est la meilleure (PPDA, ballons perdus, fautes)
+        0  aucune des deux - la mesure est un volume ou un contexte
+
+     Le zero n'est pas de la prudence, c'est le fond du metier : beaucoup de
+     degagements ou beaucoup d'arrets ne veulent pas dire bien defendre, ils
+     veulent dire subir. Beaucoup de centres est souvent l'aveu qu'on n'entre
+     pas dans la surface. La possession sert un jeu de position et dessert une
+     equipe de contre. Trancher a la place de l'analyste sur ces mesures-la
+     serait faux ; le rapport les affiche en gris et ne juge pas.            */
   var GROUPS = [
     {
       title: 'Ballon',
       rows: [
-        { k: 'possession', label: 'Possession', d: 1, suffix: ' %' },
-        { k: 'passes', label: 'Passes tentées' },
-        { k: 'passAcc', label: 'Précision des passes', d: 1, suffix: ' %' },
-        { k: 'progressivePasses', label: 'Passes progressives', tip: 'Passe réussie qui rapproche le ballon d’au moins 10 m du but adverse. Les relances parties des 40 % défensifs sont exclues, sinon les dégagements du gardien dominent le classement.' },
-        { k: 'longPasses', label: 'Passes longues (> 32 m)' },
-        { k: 'carries', label: 'Conduites de balle' },
-        { k: 'progressiveCarries', label: 'Conduites progressives', tip: 'Même règle que les passes progressives, balle au pied.' }
+        { k: 'possession', label: 'Possession', d: 1, suffix: ' %', dir: 0, tip: 'Part du temps de jeu reel. Volontairement sans jugement : elle sert une equipe de position et dessert une equipe de contre.' },
+        { k: 'passes', label: 'Passes tentées', dir: 0 },
+        { k: 'passAcc', label: 'Précision des passes', d: 1, suffix: ' %', dir: 1 },
+        { k: 'progressivePasses', label: 'Passes progressives', dir: 1, tip: 'Passe réussie qui rapproche le ballon d’au moins 10 m du but adverse. Les relances parties des 40 % défensifs sont exclues, sinon les dégagements du gardien dominent le classement.' },
+        { k: 'longPasses', label: 'Passes longues (> 32 m)', dir: 0 },
+        { k: 'carries', label: 'Conduites de balle', dir: 0 },
+        { k: 'progressiveCarries', label: 'Conduites progressives', dir: 1, tip: 'Même règle que les passes progressives, balle au pied.' }
       ]
     },
     {
       title: 'Création',
       rows: [
-        { k: 'fieldTilt', label: 'Field tilt', d: 1, suffix: ' %', tip: 'Part des passes dans le dernier tiers. Mesure qui campe dans le camp adverse.' },
-        { k: 'finalThirdPasses', label: 'Passes dans le dernier tiers' },
-        { k: 'passesIntoBox', label: 'Passes dans la surface' },
-        { k: 'touchesInBox', label: 'Touches dans la surface' },
-        { k: 'crosses', label: 'Centres' },
-        { k: 'keyPasses', label: 'Passes menant à un tir' },
-        { k: 'xa', label: 'xA', d: 2, tip: 'Somme des xG des tirs issus des passes de l’équipe.' },
-        { k: 'dribblesCompleted', label: 'Dribbles réussis' }
+        { k: 'fieldTilt', label: 'Field tilt', d: 1, suffix: ' %', dir: 1, tip: 'Part des passes dans le dernier tiers. Mesure qui campe dans le camp adverse.' },
+        { k: 'finalThirdPasses', label: 'Passes dans le dernier tiers', dir: 1 },
+        { k: 'passesIntoBox', label: 'Passes dans la surface', dir: 1 },
+        { k: 'touchesInBox', label: 'Touches dans la surface', dir: 1 },
+        { k: 'crosses', label: 'Centres', dir: 0, tip: 'Volume sans jugement : centrer beaucoup est souvent le signe qu’on n’entre pas dans la surface autrement.' },
+        { k: 'keyPasses', label: 'Passes menant à un tir', dir: 1 },
+        { k: 'xa', label: 'xA', d: 2, dir: 1, tip: 'Somme des xG des tirs issus des passes de l’équipe.' },
+        { k: 'dribblesCompleted', label: 'Dribbles réussis', dir: 1 }
       ]
     },
     {
       title: 'Finition',
       rows: [
-        { k: 'shots', label: 'Tirs' },
-        { k: 'shotsOnTarget', label: 'Tirs cadrés' },
-        { k: 'shotsInBox', label: 'Tirs dans la surface' },
-        { k: 'xg', label: 'xG', d: 2, tip: 'Buts attendus : somme de la probabilité de marquer de chaque tir.' },
-        { k: 'goals', label: 'Buts' },
-        { k: 'xgPerShot', label: 'xG par tir', d: 2, tip: 'Qualité moyenne des occasions.' }
+        { k: 'shots', label: 'Tirs', dir: 1 },
+        { k: 'shotsOnTarget', label: 'Tirs cadrés', dir: 1 },
+        { k: 'shotsInBox', label: 'Tirs dans la surface', dir: 1 },
+        { k: 'xg', label: 'xG', d: 2, dir: 1, tip: 'Buts attendus : somme de la probabilité de marquer de chaque tir.' },
+        { k: 'goals', label: 'Buts', dir: 1 },
+        { k: 'xgPerShot', label: 'xG par tir', d: 2, dir: 1, tip: 'Qualité moyenne des occasions.' }
       ]
     },
     {
       title: 'Pressing et défense',
       rows: [
-        { k: 'ppda', label: 'PPDA', d: 1, inv: true, tip: 'Passes adverses concédées par action défensive. Plus c’est bas, plus le pressing est intense.' },
-        { k: 'pressures', label: 'Pressings' },
-        { k: 'counterpressures', label: 'Contre-pressings', tip: 'Pressing dans les 5 secondes suivant une perte de balle.' },
-        { k: 'recoveries', label: 'Ballons récupérés' },
-        { k: 'interceptions', label: 'Interceptions' },
-        { k: 'tackles', label: 'Tacles' },
-        { k: 'duelsWon', label: 'Duels gagnés' },
-        { k: 'aerialsWon', label: 'Duels aériens gagnés' },
-        { k: 'clearances', label: 'Dégagements' },
-        { k: 'blocks', label: 'Tirs contrés' },
-        { k: 'saves', label: 'Arrêts du gardien' }
+        { k: 'ppda', label: 'PPDA', d: 1, dir: -1, tip: 'Passes adverses concédées par action défensive. Plus c’est bas, plus le pressing est intense.' },
+        { k: 'pressures', label: 'Pressings', dir: 0, tip: 'Volume : il depend d’abord du temps passé sans le ballon.' },
+        { k: 'counterpressures', label: 'Contre-pressings', dir: 0, tip: 'Pressing dans les 5 secondes suivant une perte de balle. Volume : il faut avoir perdu le ballon pour en faire.' },
+        { k: 'recoveries', label: 'Ballons récupérés', dir: 0 },
+        { k: 'interceptions', label: 'Interceptions', dir: 0 },
+        { k: 'tackles', label: 'Tacles', dir: 0 },
+        { k: 'duelsWon', label: 'Duels gagnés', dir: 1 },
+        { k: 'aerialsWon', label: 'Duels aériens gagnés', dir: 1 },
+        { k: 'clearances', label: 'Dégagements', dir: 0, tip: 'Sans jugement : dégager beaucoup, c’est subir, pas bien défendre.' },
+        { k: 'blocks', label: 'Tirs contrés', dir: 0 },
+        { k: 'saves', label: 'Arrêts du gardien', dir: 0, tip: 'Sans jugement : beaucoup d’arrêts veut dire que le gardien est bombardé.' }
       ]
     },
     {
       title: 'Discipline et déchet',
       rows: [
-        { k: 'turnovers', label: 'Ballons perdus', inv: true },
-        { k: 'foulsCommitted', label: 'Fautes commises', inv: true },
-        { k: 'yellowCards', label: 'Cartons jaunes', inv: true },
-        { k: 'redCards', label: 'Cartons rouges', inv: true },
-        { k: 'offsides', label: 'Hors-jeu', inv: true },
-        { k: 'corners', label: 'Corners' }
+        { k: 'turnovers', label: 'Ballons perdus', dir: -1 },
+        { k: 'foulsCommitted', label: 'Fautes commises', dir: -1 },
+        { k: 'yellowCards', label: 'Cartons jaunes', dir: -1 },
+        { k: 'redCards', label: 'Cartons rouges', dir: -1 },
+        { k: 'offsides', label: 'Hors-jeu', dir: -1 },
+        { k: 'corners', label: 'Corners', dir: 0 }
       ]
     }
   ];
@@ -387,40 +435,75 @@
 
   /* =========================================================== rendu vues */
 
-  function cmpRow(row, ta, tb) {
+  function cmpRow(row, ta, tb, A, B) {
     var va = teamVal(ta, row.k), vb = teamVal(tb, row.k);
     if (va == null && vb == null) return '';
     var na = va == null ? 0 : va, nb = vb == null ? 0 : vb;
     var tot = Math.max(na + nb, 0.0001);
     var wa = na / tot * 100, wb = nb / tot * 100;
-    // qui mene : valeur haute, sauf mesures ou le bas est meilleur
-    var aLead = row.inv ? na < nb : na > nb;
-    var bLead = row.inv ? nb < na : nb > na;
+    var dir = row.dir == null ? 1 : row.dir;
     var same = na === nb;
+    // Le gras dit "a fait mieux", pas "a fait plus" : sur une mesure neutre
+    // personne n'est mis en avant, sinon le gras jugerait a la place du lecteur.
+    var aLead = false, bLead = false;
+    if (dir && !same) {
+      aLead = dir > 0 ? na > nb : na < nb;
+      bLead = !aLead;
+    }
     var suffix = row.suffix || '';
+    var note = dir === -1 ? ' <span style="color:var(--ink-3)">(bas = mieux)</span>' :
+      (dir === 0 ? ' <span style="color:var(--ink-3)">(sans jugement)</span>' : '');
+    // L'ecart se lit depuis le point de vue choisi ; sans point de vue, depuis A.
+    var povB = S.pov === B;
+    var povSet = S.pov === A || povB;
+    var mine = povB ? nb : na, theirs = povB ? na : nb;
+    var cell = delta(mine, theirs, dir, row.d, povSet, chipFor(na, nb, dir));
     return '<div class="cmp-row"' + (row.tip ? ' data-tip="' + esc(row.tip) + '"' : '') + '>' +
       '<div class="val a ' + (same ? '' : (aLead ? 'lead' : 'trail')) + '">' + f(va, row.d) + suffix + '</div>' +
       '<div class="cmp-mid">' +
-      '<div class="cmp-label">' + esc(row.label) + (row.inv ? ' <span style="color:var(--ink-3)">(bas = mieux)</span>' : '') + '</div>' +
+      '<div class="cmp-label">' + esc(row.label) + note + '</div>' +
       '<div class="cmp-bars">' +
       '<div class="track left"><span class="fill" style="width:' + nf(wa) + '%"></span></div>' +
       '<div class="axis"></div>' +
       '<div class="track right"><span class="fill" style="width:' + nf(wb) + '%"></span></div>' +
       '</div></div>' +
       '<div class="val b ' + (same ? '' : (bLead ? 'lead' : 'trail')) + '">' + f(vb, row.d) + suffix + '</div>' +
+      '<div class="delta-cell">' + cell + '</div>' +
       '</div>';
   }
 
   // L'unite va dans l'intitule, pas sur chaque valeur : repetee deux fois
   // elle deborde de la tuile et n'apprend rien de plus.
-  function tile(label, va, vb, d, unit, note) {
+  function tile(label, va, vb, d, unit, note, dir, A, B) {
+    var na = va || 0, nb = vb || 0;
+    var povB = S.pov === B;
+    var povSet = S.pov === A || povB;
+    var dd = dir == null ? 1 : dir;
+    var cell = delta(povB ? nb : na, povB ? na : nb, dd, d, povSet, chipFor(na, nb, dd));
     return '<div class="tile">' +
       '<div class="label">' + esc(label) + (unit ? ' <span style="opacity:.7">' + esc(unit) + '</span>' : '') + '</div>' +
       '<div class="duo">' +
       '<span class="side2"><span class="chip a"></span><span class="v">' + f(va, d) + '</span></span>' +
       '<span class="side2"><span class="v">' + f(vb, d) + '</span><span class="chip b"></span></span>' +
       '</div>' +
-      (note ? '<div class="note">' + esc(note) + '</div>' : '') +
+      '<div class="tilefoot">' + cell +
+      (note ? '<span class="note">' + esc(note) + '</span>' : '') + '</div>' +
+      '</div>';
+  }
+
+  /* La legende dit ce que veut dire chaque signe. Sans elle, une fleche verte
+     n'est qu'une decoration ; avec elle, c'est une lecture.                  */
+  function valenceLegend(A, B) {
+    if (!S.pov) {
+      return '<div class="vlegend"><span class="k mute">' +
+        '<b>Aucun point de vue.</b> Les écarts sont affichés bruts, sans être jugés. ' +
+        'Choisissez une équipe en haut du rapport pour lire le match de son côté.</span></div>';
+    }
+    return '<div class="vlegend">' +
+      '<span class="k"><b>Point de vue :</b>&nbsp;<span class="chip ' + (S.pov === A ? 'a' : 'b') + '"></span>&nbsp;' + esc(S.pov) + '</span>' +
+      '<span class="k up"><span class="arw">▲</span>&nbsp;<b>avantage</b></span>' +
+      '<span class="k down"><span class="arw">▼</span>&nbsp;<b>déficit</b></span>' +
+      '<span class="k mute"><b>gris</b>&nbsp;= mesure de volume ou de contexte, que le rapport ne juge pas</span>' +
       '</div>';
   }
 
@@ -438,13 +521,14 @@
     }).join('') : '<p class="empty">Aucun but.</p>';
 
     return '<div class="stack">' +
+      valenceLegend(A, B) +
       '<div class="tiles">' +
-      tile('Possession', ta.possession, tb.possession, 1, '%') +
-      tile('xG', ta.xg, tb.xg, 2, '', 'buts attendus') +
-      tile('Tirs', ta.shots, tb.shots, 0, '', f(ta.shotsOnTarget) + ' / ' + f(tb.shotsOnTarget) + ' cadrés') +
-      tile('PPDA', ta.ppda, tb.ppda, 1, '', 'bas = pressing intense') +
-      tile('Field tilt', ta.fieldTilt, tb.fieldTilt, 1, '%', 'territoire') +
-      tile('Précision passes', ta.passAcc, tb.passAcc, 1, '%') +
+      tile('Possession', ta.possession, tb.possession, 1, '%', 'sans jugement', 0, A, B) +
+      tile('xG', ta.xg, tb.xg, 2, '', 'buts attendus', 1, A, B) +
+      tile('Tirs', ta.shots, tb.shots, 0, '', f(ta.shotsOnTarget) + ' / ' + f(tb.shotsOnTarget) + ' cadrés', 1, A, B) +
+      tile('PPDA', ta.ppda, tb.ppda, 1, '', 'bas = pressing intense', -1, A, B) +
+      tile('Field tilt', ta.fieldTilt, tb.fieldTilt, 1, '%', 'territoire', 1, A, B) +
+      tile('Précision passes', ta.passAcc, tb.passAcc, 1, '%', '', 1, A, B) +
       '</div>' +
 
       '<div class="card"><header><div><h2>Course aux xG</h2>' +
@@ -477,7 +561,7 @@
 
     var body = GROUPS.map(function (g) {
       return '<div class="cmp-group"><div class="eyebrow">' + esc(g.title) + '</div>' +
-        '<div class="cmp">' + g.rows.map(function (r) { return cmpRow(r, ta, tb); }).join('') + '</div></div>';
+        '<div class="cmp">' + g.rows.map(function (r) { return cmpRow(r, ta, tb, A, B); }).join('') + '</div></div>';
     }).join('');
 
     // radar : 8 axes normalises au maximum des deux equipes
@@ -500,8 +584,10 @@
       '<div style="max-width:480px;margin:0 auto">' + radar(axes, A, B) + '</div></div>' +
 
       '<div class="card"><header><div><h2>Comparatif détaillé</h2>' +
-      '<p class="hint">Les barres se rejoignent au centre : la moitié la plus longue a fait plus. La valeur en gras est celle qui mène.</p></div>' +
-      legend(A, B, 'dot') + '</header>' + body + '</div>' +
+      '<p class="hint">Les barres se rejoignent au centre : la moitié la plus longue a fait plus. ' +
+      'Le gras dit qui a fait <em>mieux</em>, ce qui n’est pas la même chose : sur une mesure sans jugement, personne n’est mis en avant. ' +
+      'La colonne de droite donne l’écart.</p></div>' +
+      legend(A, B, 'dot') + '</header>' + valenceLegend(A, B) + body + '</div>' +
 
       '<div class="card"><header><div><h2>Réseau de passes</h2>' +
       '<p class="hint">Position moyenne de chaque joueur au moment où il donne le ballon ; épaisseur du trait = nombre de passes échangées. ' +
@@ -534,6 +620,14 @@
         esc(c[1]) + (on ? '<span class="arrow">' + (S.sortDir < 0 ? '▼' : '▲') + '</span>' : '') + '</th>';
     }).join('') + '</tr>';
 
+    // Barre d'ampleur sur la seule colonne triee : elle donne la forme de la
+    // distribution sans peindre tout le tableau. Volontairement aux couleurs
+    // d'equipe et non vert/rouge - c'est une magnitude, pas un jugement : un
+    // gros volume de ballons perdus n'est pas "mauvais" hors contexte.
+    var magMax = rows.reduce(function (m, p) {
+      return Math.max(m, Math.abs(pv(p, S.sortKey) || 0));
+    }, 0);
+
     var body = rows.map(function (p) {
       return '<tr>' +
         '<td><span class="who"><span class="chip ' + (p.team === A ? 'a' : 'b') + '"></span>' +
@@ -543,7 +637,11 @@
         cols.map(function (c) {
           var v = pv(p, c[0]);
           var dd = S.per90 && !PER90_EXEMPT[c[0]] ? Math.max(c[2], 1) : c[2];
-          return '<td>' + (v ? f(v, dd) : '<span style="color:var(--ink-3)">' + f(0, dd) + '</span>') + '</td>';
+          var txt = v ? f(v, dd) : '<span style="color:var(--ink-3)">' + f(0, dd) + '</span>';
+          if (c[0] !== S.sortKey || !magMax) return '<td>' + txt + '</td>';
+          var w = Math.abs(v || 0) / magMax * 100;
+          return '<td class="mag' + (p.team === A ? '' : ' tb') + '">' +
+            '<span class="bar" style="width:' + nf(w) + '%"></span><span>' + txt + '</span></td>';
         }).join('') +
         '</tr>';
     }).join('');
@@ -789,8 +887,40 @@
     ['duel', 'Duel'], ['import', 'Données']
   ];
 
+  /* Le point de vue est ce qui donne un sens au vert et au rouge : sans
+     equipe de reference, "mieux" ne veut rien dire dans un match a deux.    */
+  function headControls(A, B) {
+    var themeLabel = { light: '◑ Clair', dark: '◐ Sombre' }[S.theme] || '◐◑ Auto';
+    function povBtn(v, label) {
+      return '<button type="button" data-v="' + esc(v) + '" aria-pressed="' + (S.pov === (v || null)) + '">' +
+        esc(label) + '</button>';
+    }
+    return '<div class="hctl">' +
+      '<span class="eyebrow">Point de vue</span>' +
+      '<div class="seg tiny" data-role="pov">' +
+      povBtn(A, A) + povBtn(B, B) + povBtn('', 'Neutre') +
+      '</div>' +
+      '<button type="button" class="btn tiny" data-role="theme" ' +
+      'title="Thème du rapport : auto, clair, sombre">' + themeLabel + '</button>' +
+      '</div>';
+  }
+
+  /* Le theme suit l'OS par defaut, et se force pour la salle video ou pour
+     un PDF a imprimer. Un navigateur peut refuser localStorage (navigation
+     privee, fichier local verrouille) : on ne doit jamais casser pour ca.    */
+  function applyTheme() {
+    var el = document.documentElement;
+    if (S.theme === 'light' || S.theme === 'dark') el.setAttribute('data-theme', S.theme);
+    else el.removeAttribute('data-theme');
+    try { if (S.theme) localStorage.setItem('kmr-theme', S.theme); else localStorage.removeItem('kmr-theme'); }
+    catch (err) { /* stockage indisponible : le choix ne survivra pas au rechargement, tant pis */ }
+  }
+
   function render() {
     var d = S.data;
+    // Au premier rendu d'un match, on se place du cote de l'equipe A : sans
+    // point de vue le vert et le rouge n'auraient rien a dire.
+    if (d && d.kind === 'statsbomb' && S.pov === null && !S.povTouched) S.pov = d.teamNames[0];
     var head = document.getElementById('head');
     var main = document.getElementById('main');
     var tabs = [];
@@ -809,11 +939,11 @@
         '<div class="possbar" title="Possession"><span class="pa" style="width:' + nf(ta.possession, 2) + '%"></span>' +
         '<span class="gapline"></span>' +
         '<span class="pb" style="width:' + nf(tb.possession, 2) + '%"></span></div>' +
-        '<div class="wrap"><div class="tabs" role="tablist">' +
+        '<div class="wrap"><div class="hbar"><div class="tabs" role="tablist">' +
         TABS_SB.map(function (t) {
           return '<button type="button" class="tab" role="tab" data-tab="' + t[0] + '" aria-selected="' +
             (S.tab === t[0]) + '">' + esc(t[1]) + '</button>';
-        }).join('') + '</div></div>';
+        }).join('') + '</div>' + headControls(A, B) + '</div></div>';
       tabs = TABS_SB;
     } else {
       var sub = 'importez un fichier pour commencer';
@@ -877,6 +1007,30 @@
   });
   on('[data-role="per90"] button', 'click', function (e, t) { S.per90 = t.dataset.v === '1'; render(); });
   on('[data-role="netteam"] button', 'click', function (e, t) { S.netTeam = t.dataset.team; render(); });
+  on('[data-role="pov"] button', 'click', function (e, t) {
+    S.pov = t.dataset.v || null;
+    S.povTouched = true;   // un choix explicite de Neutre ne doit pas etre ecrase
+    render();
+  });
+  on('[data-role="theme"]', 'click', function () {
+    S.theme = S.theme === 'light' ? 'dark' : (S.theme === 'dark' ? null : 'light');
+    applyTheme();
+    render();
+  });
+
+  // Un tablist se parcourt aux fleches : c'est ce qu'attend un lecteur d'ecran,
+  // et c'est plus rapide a la main pendant un debrief.
+  on('.tab', 'keydown', function (e, t) {
+    var dir = e.key === 'ArrowRight' ? 1 : (e.key === 'ArrowLeft' ? -1 : 0);
+    if (!dir) return;
+    e.preventDefault();
+    var list = [].slice.call(document.querySelectorAll('.tab'));
+    var i = list.indexOf(t);
+    var next = list[(i + dir + list.length) % list.length];
+    if (next) next.click();
+    var again = document.querySelector('.tab[data-tab="' + next.dataset.tab + '"]');
+    if (again) again.focus();
+  });
 
   on('th[data-sort]', 'click', function (e, t) {
     var k = t.dataset.sort;
@@ -980,6 +1134,8 @@
         S.tab = 'resume';
         S.duelA = S.duelB = null;
         S.netTeam = null;
+        S.pov = null;
+        S.povTouched = false;
         S.sortKey = 'minutes'; S.sortDir = -1;
         S.teamFilter = 'all';
       } catch (err) {
@@ -1024,6 +1180,12 @@
   });
 
   /* ------------------------------------------------------------- demarrage */
+  try {
+    var saved = localStorage.getItem('kmr-theme');
+    if (saved === 'light' || saved === 'dark') S.theme = saved;
+  } catch (err) { /* pas de stockage : on reste sur le theme du systeme */ }
+  applyTheme();
+
   var demoE = document.getElementById('demo-events');
   var demoL = document.getElementById('demo-lineups');
   if (demoE) {

@@ -30,6 +30,16 @@
   --good:       #0ca30c;
   --critical:   #d03b3b;
 
+  /* Valence : texte a 4,5:1, marque a 3:1. Voir le bloc "valence" plus bas
+     pour la raison pour laquelle elle ne prend jamais la forme d'un aplat. */
+  --val-good:      #006300;
+  --val-good-mark: #0ca30c;
+  --val-bad:       #d03b3b;
+  --val-bad-mark:  #d03b3b;
+  --val-none:      var(--ink-3);
+  --val-good-wash: rgba(12, 163, 12, .10);
+  --val-bad-wash:  rgba(208, 59, 59, .10);
+
   --shadow:     0 1px 2px rgba(16, 21, 17, .04), 0 8px 24px rgba(16, 21, 17, .05);
 
   --sans: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -75,6 +85,14 @@
     --good:       #0ca30c;
     --critical:   #e66767;
 
+    --val-good:      #0ca30c;
+    --val-good-mark: #0ca30c;
+    --val-bad:       #e66767;
+    --val-bad-mark:  #e66767;
+    --val-none:      var(--ink-3);
+    --val-good-wash: rgba(12, 163, 12, .16);
+    --val-bad-wash:  rgba(230, 103, 103, .16);
+
     --shadow:     0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .35);
   }
 }
@@ -103,6 +121,14 @@
 
   --good:       #0ca30c;
   --critical:   #e66767;
+
+  --val-good:      #0ca30c;
+  --val-good-mark: #0ca30c;
+  --val-bad:       #e66767;
+  --val-bad-mark:  #e66767;
+  --val-none:      var(--ink-3);
+  --val-good-wash: rgba(12, 163, 12, .16);
+  --val-bad-wash:  rgba(230, 103, 103, .16);
 
   --shadow:     0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .35);
 }
@@ -316,10 +342,10 @@ main { padding: var(--gap-2) 0 4rem; }
 
 .cmp-row {
   display: grid;
-  grid-template-columns: 4.5rem 1fr 4.5rem;
+  grid-template-columns: 4.2rem 1fr 4.2rem 4.9rem;
   align-items: center;
-  gap: .6rem;
-  padding: .3rem 0;
+  gap: .55rem;
+  padding: .32rem 0;
   border-radius: 6px;
 }
 .cmp-row:hover { background: var(--surface-2); }
@@ -666,6 +692,151 @@ label.field .eyebrow { font-size: .68rem; }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* ============================================================== valence
+   Second canal de lecture : la mesure est-elle bonne pour l'equipe prise
+   comme point de vue.
+
+   Regle non negociable : la valence ne prend JAMAIS la forme d'un aplat.
+   Elle s'ecrit fleche + valeur teintee, dans sa propre colonne, a l'ecart
+   des barres d'equipe. Deux mesures l'imposent (OKLab x100, plancher 15) :
+
+     - rouge deficit contre orange equipe B : DE 10,8 en clair, 7,1 en
+       sombre. Cote a cote en aplat, ils se confondent.
+     - vert contre rouge : DE 4,1 en deuteranopie. Pour un lecteur daltonien
+       rouge-vert, ce sont deux fois la meme couleur - environ un homme sur
+       douze dans un staff.
+
+   La fleche porte le sens, la couleur ne fait que le renforcer. Le rapport
+   se lit donc juste en noir et blanc, a l'impression, et sans distinguer
+   le rouge du vert.
+   ====================================================================== */
+
+.delta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: .26rem;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--step--1);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.delta .arw { font-size: .8em; line-height: 1; font-family: var(--sans); }
+.delta.up   { color: var(--val-good); }
+.delta.down { color: var(--val-bad); }
+.delta.flat,
+.delta.mute { color: var(--val-none); font-weight: 500; }
+
+.cmp-row .delta-cell {
+  justify-self: end;
+  padding-left: .5rem;
+  border-left: 1px solid var(--rule-soft);
+  min-height: 1.4em;
+  display: flex;
+  align-items: center;
+}
+
+/* Bandeau de tete : point de vue + theme. */
+.hbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  flex-wrap: wrap;
+}
+.hbar .tabs { flex: 1 1 auto; }
+.hbar .hctl { display: flex; align-items: center; gap: .5rem; flex: 0 0 auto; padding-bottom: .3rem; }
+.hbar .hctl .eyebrow { font-size: .66rem; letter-spacing: .09em; }
+
+.seg.tiny button { padding: .28rem .5rem; font-size: var(--step--1); }
+
+/* Legende de la valence : ce que veut dire chaque signe. */
+.vlegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem .95rem;
+  align-items: center;
+  font-size: var(--step--1);
+  color: var(--ink-3);
+  padding: .55rem .7rem;
+  background: var(--surface-2);
+  border-radius: 8px;
+  margin-bottom: .9rem;
+}
+.vlegend .k { display: inline-flex; align-items: center; gap: .3rem; }
+.vlegend .k b { font-weight: 600; }
+.vlegend .up   { color: var(--val-good); }
+.vlegend .down { color: var(--val-bad); }
+.vlegend .mute { color: var(--val-none); }
+
+/* Colonne triee du tableau joueurs : barre d'ampleur en fond de cellule.
+   Neutre exprès - c'est une magnitude, pas un jugement. */
+td.mag { position: relative; }
+td.mag .bar {
+  position: absolute;
+  left: 0;
+  bottom: 2px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--a-line);
+  pointer-events: none;
+}
+td.mag.tb .bar { background: var(--b-line); }
+td.mag > span { position: relative; }
+
+/* En-tete et colonne joueur qui restent visibles pendant le defilement. */
+.tablewrap { max-height: 70vh; }
+.tablewrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+}
+.tablewrap tbody tr:hover td { background: var(--surface-2); }
+
+.chip.pov {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+/* Un anneau de focus visible partout : le rapport se parcourt au clavier. */
+:focus-visible {
+  outline: 2px solid var(--a);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (max-width: 640px) {
+  .cmp-row { grid-template-columns: 3.4rem 1fr 3.4rem 4.2rem; gap: .4rem; }
+  .cmp-row .delta-cell { padding-left: .35rem; }
+}
+
+/* Pied de tuile : l'ecart d'abord, la note ensuite. */
+.tilefoot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .5rem;
+  min-height: 1.2em;
+}
+.tilefoot .note { text-align: right; }
+.tilefoot .delta .chip { width: 7px; height: 7px; border-radius: 2px; align-self: center; }
+
+.vlegend .chip { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.vlegend .arw { font-size: .85em; }
+.delta .chip { width: 7px; height: 7px; border-radius: 2px; display: inline-block; align-self: center; }
+
+.btn.tiny { padding: .3rem .55rem; font-size: var(--step--1); }
+
+/* A l'impression le fond disparait : la fleche et le signe doivent suffire.
+   C'est deja le cas - la couleur n'a jamais porte le sens seule. */
+@media print {
+  .hctl { display: none !important; }
+  .vlegend { background: none; border: 1px solid #ccc; }
+  .tablewrap { max-height: none; }
+  .tablewrap thead th { position: static; }
 }
 
 /* --------------------------------------------------------------- impression */
