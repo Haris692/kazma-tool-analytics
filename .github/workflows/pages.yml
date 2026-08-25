@@ -1,0 +1,61 @@
+# Assemble la page a chaque push et la publie sur GitHub Pages.
+# Le depot ne stocke pas de copie du site : la page est rebatie depuis src/
+# a chaque fois, donc ce qui est en ligne suit toujours les sources.
+name: Publier la feuille de match
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Un seul deploiement a la fois ; on ne coupe pas celui qui est en cours.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verifier le moteur
+        run: |
+          node test/run.js
+          node test/slim.js
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Assembler la page
+        run: python build.py
+
+      # Pages sert index.html a la racine : la page autonome devient le site.
+      - name: Preparer le site
+        run: |
+          mkdir -p _site
+          cp dist/rapport-match.html _site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
