@@ -6,11 +6,17 @@ comparatif des deux équipes, puis de chaque joueur.
 Tout tourne dans le navigateur. Aucun fichier n'est envoyé nulle part, aucun
 serveur n'est nécessaire, la page fonctionne hors ligne.
 
+**En ligne : <https://haris692.github.io/kazma-tool-analytics/>**
+
 ---
 
 ## Utilisation
 
-Ouvrir `dist/rapport-match.html` dans un navigateur (double-clic suffit).
+En ligne : <https://haris692.github.io/kazma-tool-analytics/>
+
+Hors ligne : ouvrir `dist/rapport-match.html` dans un navigateur
+(double-clic suffit), ou enregistrer la page en ligne avec `Ctrl+S` —
+c'est un fichier unique, il n'a besoin de rien d'autre.
 La page s'ouvre sur un match de démonstration — France 4-2 Croatie, finale de la
 Coupe du Monde 2018 — pour montrer le rendu sans rien avoir à importer.
 
