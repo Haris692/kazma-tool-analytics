@@ -5,6 +5,7 @@
   'use strict';
 
   var KMR = window.KMR;
+  var XLSX = window.KMRXlsx;
   var S = {
     data: null,
     tab: 'resume',
@@ -18,6 +19,9 @@
     netTeam: null,
     pov: null,
     povTouched: false,
+    mi: null,            // journee affichee (index dans d.matches)
+    instatView: 'general',
+    instat: { matches: null, players: null, name: null },
     theme: null,
     pending: { events: null, lineups: null }
   };
@@ -175,6 +179,185 @@
       ]
     }
   ];
+
+  /* ------------------------------------------- mesures InStat (export xlsx)
+     Meme grammaire que les mesures StatsBomb : `k` est ici l'intitule exact
+     de la colonne du classeur, et `dir` dit si le haut, le bas, ou rien
+     n'est meilleur. `test/instat.js` verifie que chaque `k` existe vraiment
+     dans l'export - soixante-dix intitules anglais recopies a la main, la
+     faute de frappe est certaine sans controle.
+
+     InStat livre beaucoup de decompositions (une action, puis la meme
+     "successful", puis son pourcentage). On garde le volume et le taux, et
+     on jette le compte intermediaire : il n'apprend rien de plus et allonge
+     le tableau.                                                             */
+  var INSTAT_GROUPS = [
+    {
+      title: 'Ballon',
+      rows: [
+        { k: 'Ball possession, %', label: 'Possession', d: 1, suffix: ' %', dir: 0, tip: 'Volontairement sans jugement : elle sert une equipe de position et dessert une equipe de contre.' },
+        { k: 'Ball possession, min.', label: 'Temps de possession', d: 1, suffix: ' min', dir: 0 },
+        { k: 'Average duration of ball possession, min.', label: 'Durée moyenne d’une possession', d: 2, suffix: ' min', dir: 0, tip: 'Longue = jeu de position. Courte = transitions. Ni l’un ni l’autre n’est meilleur.' },
+        { k: 'Passes', label: 'Passes', dir: 0 },
+        { k: 'Passes accurate, %', label: 'Précision des passes', d: 1, suffix: ' %', dir: 1 },
+        { k: 'Passes forward accurate, %', label: 'Précision des passes vers l’avant', d: 1, suffix: ' %', dir: 1 },
+        { k: 'Progressive passes', label: 'Passes progressives', dir: 1 },
+        { k: 'Progressive passes accurate, %', label: 'Précision des passes progressives', d: 1, suffix: ' %', dir: 1 },
+        { k: 'Long passes', label: 'Passes longues', dir: 0 },
+        { k: 'Long passes accurate, %', label: 'Précision des passes longues', d: 1, suffix: ' %', dir: 1 },
+        { k: 'Carry', label: 'Conduites de balle', dir: 0 }
+      ]
+    },
+    {
+      title: 'Création',
+      rows: [
+        { k: 'Final third entries', label: 'Entrées dans le dernier tiers', dir: 1 },
+        { k: 'Final third entries through pass', label: 'dont par la passe', dir: 0 },
+        { k: 'Final third entries through carry', label: 'dont balle au pied', dir: 0 },
+        { k: 'Entries to the opponent\'s box', label: 'Entrées dans la surface', dir: 1 },
+        { k: 'Passes into the penalty box', label: 'Passes dans la surface', dir: 1 },
+        { k: 'Passes into the penalty box accurate, %', label: 'Précision des passes dans la surface', d: 1, suffix: ' %', dir: 1 },
+        { k: 'Key passes', label: 'Passes clés', dir: 1 },
+        { k: 'Key passes accurate, %', label: 'Précision des passes clés', d: 1, suffix: ' %', dir: 1 },
+        { k: 'Crosses', label: 'Centres', dir: 0, tip: 'Volume sans jugement : centrer beaucoup est souvent le signe qu’on n’entre pas dans la surface autrement.' },
+        { k: 'Crosses accurate, %', label: 'Précision des centres', d: 1, suffix: ' %', dir: 1 },
+        { k: 'Chances', label: 'Occasions', dir: 1 },
+        { k: 'Chances successful, %', label: 'Occasions converties', d: 1, suffix: ' %', dir: 1 },
+        { k: 'Dribbles', label: 'Dribbles tentés', dir: 0 },
+        { k: 'Dribbles successful, %', label: 'Dribbles réussis', d: 1, suffix: ' %', dir: 1 },
+        { k: 'Actions in opponent\'s box', label: 'Actions dans la surface adverse', dir: 1 }
+      ]
+    },
+    {
+      title: 'Finition',
+      rows: [
+        { k: 'Shots', label: 'Tirs', dir: 1 },
+        { k: 'Shots on target', label: 'Tirs cadrés', dir: 1 },
+        { k: 'Shots on target, %', label: 'Tirs cadrés', d: 1, suffix: ' %', dir: 1 },
+        { k: 'Shots blocked', label: 'Tirs contrés', dir: 0 },
+        { k: 'Goals', label: 'Buts', dir: 1 },
+        { k: 'xG (expected goals)', label: 'xG', d: 2, dir: 1, tip: 'Buts attendus : somme de la probabilité de marquer de chaque tir.' },
+        { k: 'xGPS (xG per shot)', label: 'xG par tir', d: 2, dir: 1, tip: 'Qualité moyenne des occasions.' },
+        { k: 'xGC (xG conversion)', label: 'Conversion du xG', d: 2, dir: 1, tip: 'Buts marqués rapportés au xG. Au-dessus de 1, on convertit mieux que prévu.' },
+        { k: 'Free-kick shots', label: 'Tirs sur coup franc', dir: 0 },
+        { k: 'Penalty', label: 'Penaltys obtenus', dir: 0 }
+      ]
+    },
+    {
+      title: 'Profil offensif',
+      rows: [
+        { k: 'Positional attacks', label: 'Attaques placées', dir: 0 },
+        { k: 'Positional attacks with shots, %', label: 'dont finies par un tir', d: 1, suffix: ' %', dir: 1 },
+        { k: 'Counterattacks', label: 'Contre-attaques', dir: 0 },
+        { k: 'Counterattacks with shots, %', label: 'dont finies par un tir', d: 1, suffix: ' %', dir: 1 },
+        { k: 'Attacks from set pieces', label: 'Attaques sur coup arrêté', dir: 0 },
+        { k: 'Attacks from set pieces with shots, %', label: 'dont finies par un tir', d: 1, suffix: ' %', dir: 1 },
+        { k: 'Attacks from corners', label: 'Attaques sur corner', dir: 0 },
+        { k: 'Left flank attacks', label: 'Attaques par le couloir gauche', dir: 0 },
+        { k: 'Attacks through the center', label: 'Attaques par l’axe', dir: 0 },
+        { k: 'Right flank attacks', label: 'Attaques par le couloir droit', dir: 0 }
+      ]
+    },
+    {
+      title: 'Pressing et défense',
+      rows: [
+        { k: 'Team pressing', label: 'Pressings', dir: 0, tip: 'Volume : il depend d’abord du temps passé sans le ballon.' },
+        { k: 'Team pressing successful, %', label: 'Pressings réussis', d: 1, suffix: ' %', dir: 1 },
+        { k: 'High pressing', label: 'Pressing haut', dir: 0 },
+        { k: 'High pressing successful, %', label: 'Pressing haut réussi', d: 1, suffix: ' %', dir: 1 },
+        { k: 'Low pressing', label: 'Pressing bas', dir: 0 },
+        { k: 'Low pressing successful, %', label: 'Pressing bas réussi', d: 1, suffix: ' %', dir: 1 },
+        { k: 'Ball recoveries', label: 'Ballons récupérés', dir: 0 },
+        { k: 'Ball recoveries in opponent\'s half', label: 'Récupérations dans le camp adverse', dir: 1 },
+        { k: 'Ball recoveries after losses within 5 seconds', label: 'Récupérations dans les 5 s après une perte', dir: 1, tip: 'Le contre-pressing qui aboutit.' },
+        { k: 'Average distance to the goal at ball recoveries', label: 'Distance moyenne du but à la récupération', d: 1, suffix: ' m', dir: 0, tip: 'Sans jugement : la valeur dit où l’équipe récupère, ce qui dépend du plan de jeu.' },
+        { k: 'Interceptions', label: 'Interceptions', dir: 0 },
+        { k: 'Tackles', label: 'Tacles', dir: 0 },
+        { k: 'Tackles successful, %', label: 'Tacles réussis', d: 1, suffix: ' %', dir: 1 },
+        { k: 'Challenges won, %', label: 'Duels gagnés', d: 1, suffix: ' %', dir: 1 },
+        { k: 'Defensive challenges won, %', label: 'Duels défensifs gagnés', d: 1, suffix: ' %', dir: 1 },
+        { k: 'Aerial challenges won, %', label: 'Duels aériens gagnés', d: 1, suffix: ' %', dir: 1 },
+        { k: 'OxG (opponent\'s xG)', label: 'xG concédé', d: 2, dir: -1, tip: 'Buts attendus des tirs adverses. Plus c’est bas, mieux la défense a tenu.' }
+      ]
+    },
+    {
+      title: 'Discipline et déchet',
+      rows: [
+        { k: 'Lost balls', label: 'Ballons perdus', dir: -1 },
+        { k: 'Lost balls in own half', label: 'Ballons perdus dans son camp', dir: -1 },
+        { k: 'Lost balls after passes', label: 'Pertes sur passe', dir: -1 },
+        { k: 'Individual ball losses', label: 'Pertes individuelles', dir: -1 },
+        { k: 'Bad ball control', label: 'Mauvais contrôles', dir: -1 },
+        { k: 'Offsides', label: 'Hors-jeu', dir: -1 },
+        { k: 'Fouls', label: 'Fautes commises', dir: -1 },
+        { k: 'Yellow cards', label: 'Cartons jaunes', dir: -1 },
+        { k: 'Red cards', label: 'Cartons rouges', dir: -1 },
+        { k: 'Own goals', label: 'Buts contre son camp', dir: -1 }
+      ]
+    }
+  ];
+
+  /* Colonnes du tableau joueurs. Le fichier InStat est un cumul de SAISON :
+     aucune ventilation par match n'existe dedans, et l'interface doit le dire
+     plutot que de laisser croire a des chiffres de rencontre.                */
+  var INSTAT_COLS = {
+    general: [
+      ['Minutes played', 'Min', 0], ['Matches played', 'MJ', 0], ['Index', 'Index', 0],
+      ['Goals', 'Buts', 0], ['Assists', 'Passes D', 0], ['Shots', 'Tirs', 0],
+      ['xG (expected goals)', 'xG', 2], ['xA (expected assists)', 'xA', 2],
+      ['Passes', 'Pas', 0], ['Passes accurate, %', '%', 1],
+      ['Challenges won, %', 'Duels %', 1], ['Ball recoveries', 'Réc', 0],
+      ['Lost balls', 'Pertes', 0]
+    ],
+    offensif: [
+      ['Minutes played', 'Min', 0], ['Goals', 'Buts', 0], ['Assists', 'Passes D', 0],
+      ['Chances created', 'Occ. créées', 0], ['Shots', 'Tirs', 0], ['Shots on target', 'Cadrés', 0],
+      ['xG (expected goals)', 'xG', 2], ['xA (expected assists)', 'xA', 2],
+      ['Key passes', 'Passes clés', 0], ['Passes into the penalty box', 'Pas. surface', 0],
+      ['Dribbles successful', 'Dribbles+', 0], ['Crosses', 'Centres', 0],
+      ['Open passes received in the final third', 'Reçus 1/3', 0],
+      ['Actions in opponent\'s box', 'Act. surface', 0]
+    ],
+    defensif: [
+      ['Minutes played', 'Min', 0], ['Challenges', 'Duels', 0], ['Challenges won, %', 'Duels %', 1],
+      ['Defensive challenges won, %', 'Déf. %', 1], ['Aerial challenges', 'Aériens', 0],
+      ['Aerial challenges won, %', 'Aér. %', 1], ['Tackles', 'Tacles', 0],
+      ['Tackles successful, %', 'Tacles %', 1], ['Interceptions', 'Int', 0],
+      ['Ball recoveries', 'Réc', 0], ['Ball recoveries in opponent\'s half', 'Réc. haut', 0],
+      ['Fouls', 'Fautes', 0], ['Mistakes leading to goals', 'Err. > but', 0],
+      ['xGOPP (opponent\'s xG while player is on the pitch)', 'xG adv. sur le terrain', 2]
+    ]
+  };
+
+  // Ramener a 90 minutes n'a de sens que sur un decompte. Un pourcentage, un
+  // age, un Index ou un nombre de matchs ne se divisent pas par le temps joue.
+  var INSTAT_NO_PER90 = {
+    'Minutes played': 1, 'Matches played': 1, 'Index': 1, 'Age': 1,
+    'Starting lineup appearances': 1, 'Substitutes in': 1, 'Substitutes out': 1
+  };
+  function instatPer90Exempt(k) {
+    return !!INSTAT_NO_PER90[k] || /, %( of total)?$/.test(k);
+  }
+
+  // Codes de poste InStat : lettre de cote + ligne. LCDM = milieu defensif gauche.
+  var INSTAT_POS = {
+    GK: 'Gardien',
+    RB: 'Latéral droit', LB: 'Latéral gauche',
+    RCB: 'Défenseur central droit', LCB: 'Défenseur central gauche', CB: 'Défenseur central',
+    RWB: 'Piston droit', LWB: 'Piston gauche',
+    CDM: 'Milieu défensif', RCDM: 'Milieu défensif droit', LCDM: 'Milieu défensif gauche',
+    CM: 'Milieu central', RCM: 'Milieu central droit', LCM: 'Milieu central gauche',
+    RM: 'Milieu droit', LM: 'Milieu gauche',
+    CAM: 'Meneur de jeu', RCAM: 'Meneur droit', LCAM: 'Meneur gauche',
+    RAM: 'Milieu offensif droit', LAM: 'Milieu offensif gauche',
+    RW: 'Ailier droit', LW: 'Ailier gauche',
+    CF: 'Avant-centre', RCF: 'Attaquant droit', LCF: 'Attaquant gauche', SS: 'Second attaquant'
+  };
+  function instatPosLong(code) {
+    var c = String(code == null ? '' : code).trim();
+    if (!c || c === '-') return 'poste inconnu';
+    return INSTAT_POS[c] || c;
+  }
 
   function teamVal(t, k) {
     if (k === 'xgPerShot') return t.shots ? t.xg / t.shots : 0;
@@ -435,7 +618,7 @@
 
   /* =========================================================== rendu vues */
 
-  function cmpRow(row, ta, tb, A, B) {
+  function cmpRow(row, ta, tb, A, B, blank0) {
     var va = teamVal(ta, row.k), vb = teamVal(tb, row.k);
     if (va == null && vb == null) return '';
     var na = va == null ? 0 : va, nb = vb == null ? 0 : vb;
@@ -450,6 +633,10 @@
       aLead = dir > 0 ? na > nb : na < nb;
       bLead = !aLead;
     }
+    // InStat ecrit ses zeros en tiret : "Goals -" sur un 0-0. Afficher "--"
+    // ferait croire a une donnee manquante, alors que la valeur est connue et
+    // vaut zero. Les formats qui laissent vraiment un trou gardent "--".
+    if (blank0) { if (va == null) va = 0; if (vb == null) vb = 0; }
     var suffix = row.suffix || '';
     var note = dir === -1 ? ' <span style="color:var(--ink-3)">(bas = mieux)</span>' :
       (dir === 0 ? ' <span style="color:var(--ink-3)">(sans jugement)</span>' : '');
@@ -474,7 +661,8 @@
 
   // L'unite va dans l'intitule, pas sur chaque valeur : repetee deux fois
   // elle deborde de la tuile et n'apprend rien de plus.
-  function tile(label, va, vb, d, unit, note, dir, A, B) {
+  function tile(label, va, vb, d, unit, note, dir, A, B, blank0) {
+    if (blank0) { if (va == null) va = 0; if (vb == null) vb = 0; }
     var na = va || 0, nb = vb || 0;
     var povB = S.pov === B;
     var povSet = S.pov === A || povB;
@@ -795,6 +983,351 @@
     return m[p] || p;
   }
 
+  /* ============================================================== InStat
+
+     Ce que cet export permet, et ce qu'il ne permet pas - l'interface doit
+     dire les deux, sinon elle laisse croire a des chiffres qu'elle n'a pas.
+
+     Il donne : une saison de matchs, deux lignes par rencontre (nous, eux),
+     avec xG, xG concede, xPoints, dispositifs, hauteur de pressing et
+     familles d'attaques. Plus un cumul de saison par joueur.
+
+     Il ne donne pas : le moindre evenement horodate ni la moindre
+     coordonnee. Donc pas de carte des tirs, pas de course aux xG minute par
+     minute, pas de reseau de passes - et surtout aucune ventilation des
+     joueurs par match. L'onglet Joueurs est un cumul de SAISON, et il le dit.
+     ====================================================================== */
+
+  function iv(t, k) {
+    var v = t ? t[k] : null;
+    return typeof v === 'number' && isFinite(v) ? v : null;
+  }
+
+  function matchLabel(m, i, n) {
+    var dd = m.date;
+    var jour = ('0' + dd.getDate()).slice(-2) + '/' + ('0' + (dd.getMonth() + 1)).slice(-2);
+    return 'J' + (i + 1) + '/' + n + ' · ' + jour + ' · ' + (m.home ? 'dom' : 'ext') +
+      ' · ' + m.opponent + ' ' + m.gf + '-' + m.ga;
+  }
+
+  function currentMatch(d) {
+    if (!d.matches.length) return null;
+    var i = S.mi;
+    if (i == null || i < 0 || i >= d.matches.length) i = d.matches.length - 1;
+    return d.matches[i];
+  }
+
+  function instatTiles(d, m, A, B) {
+    return '<div class="tiles">' +
+      tile('Possession', iv(m.us, 'Ball possession, %'), iv(m.them, 'Ball possession, %'), 1, '%', 'sans jugement', 0, A, B, true) +
+      tile('xG', iv(m.us, 'xG (expected goals)'), iv(m.them, 'xG (expected goals)'), 2, '', 'buts attendus', 1, A, B, true) +
+      tile('Tirs', iv(m.us, 'Shots'), iv(m.them, 'Shots'), 0, '',
+        f(iv(m.us, 'Shots on target')) + ' / ' + f(iv(m.them, 'Shots on target')) + ' cadrés', 1, A, B) +
+      tile('Occasions', iv(m.us, 'Chances'), iv(m.them, 'Chances'), 0, '', 'selon InStat', 1, A, B, true) +
+      tile('Pressing réussi', iv(m.us, 'Team pressing successful, %'), iv(m.them, 'Team pressing successful, %'), 1, '%', '', 1, A, B, true) +
+      tile('Précision passes', iv(m.us, 'Passes accurate, %'), iv(m.them, 'Passes accurate, %'), 1, '%', '', 1, A, B, true) +
+      '</div>';
+  }
+
+  function viewInstatResume(d) {
+    var m = currentMatch(d);
+    if (!m) return '<p class="empty">Aucun match dans ce classeur.</p>';
+    var A = d.teamName, B = m.opponent;
+
+    var res = { V: 'Victoire', N: 'Match nul', D: 'Défaite' }[m.result];
+    var xg = iv(m.us, 'xG (expected goals)'), oxg = iv(m.them, 'xG (expected goals)');
+    var verdict;
+    if (xg != null && oxg != null) {
+      var ecart = xg - oxg;
+      verdict = ecart > 0.5 ? 'Le volume d’occasions est de notre côté.'
+        : (ecart < -0.5 ? 'Le volume d’occasions est du côté adverse.'
+          : 'Volume d’occasions équilibré.');
+      if (m.gf - m.ga > 0 && ecart < 0) verdict += ' Résultat pris au-dessus du contenu.';
+      if (m.gf - m.ga < 0 && ecart > 0) verdict += ' Contenu supérieur au résultat.';
+    }
+
+    return '<div class="stack">' +
+      valenceLegend(A, B) +
+      '<div class="card"><header><div><h2>' + esc(res) + ' ' + m.gf + '-' + m.ga + ' ' +
+      (m.home ? 'à domicile contre ' : 'à l’extérieur contre ') + esc(B) + '</h2>' +
+      '<p class="hint">' + esc(dateLong(m.date)) + ' · dispositifs ' + esc(m.formation || '?') +
+      ' contre ' + esc(m.oppFormation || '?') +
+      (verdict ? ' · ' + esc(verdict) : '') + '</p></div></header>' +
+      instatTiles(d, m, A, B) + '</div>' +
+
+      '<div class="card"><header><div><h2>Ce que ce match dit du contenu</h2>' +
+      '<p class="hint">InStat livre des totaux par équipe, pas les actions une par une : ' +
+      'ni carte des tirs, ni chronologie. Ce que le classeur contient est ci-dessous, en entier.</p></div></header>' +
+      '<div class="tiles">' +
+      tile('xG concédé', iv(m.them, 'xG (expected goals)'), iv(m.us, 'xG (expected goals)'), 2, '', 'vu de l’adversaire', 1, B, A, true) +
+      tile('xPoints', iv(m.us, 'xPoints'), iv(m.them, 'xPoints'), 2, '', 'points attendus', 1, A, B, true) +
+      tile('Entrées surface', iv(m.us, 'Entries to the opponent\'s box'), iv(m.them, 'Entries to the opponent\'s box'), 0, '', '', 1, A, B, true) +
+      tile('Contre-attaques', iv(m.us, 'Counterattacks'), iv(m.them, 'Counterattacks'), 0, '', 'sans jugement', 0, A, B, true) +
+      tile('Pressing haut', iv(m.us, 'High pressing'), iv(m.them, 'High pressing'), 0, '', 'sans jugement', 0, A, B, true) +
+      tile('Ballons perdus', iv(m.us, 'Lost balls'), iv(m.them, 'Lost balls'), 0, '', '', -1, A, B, true) +
+      '</div></div>' +
+      '</div>';
+  }
+
+  function dateLong(d) {
+    var mois = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet',
+      'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+    return d.getDate() + ' ' + mois[d.getMonth()] + ' ' + d.getFullYear();
+  }
+
+  function instatCompare(d, us, them, A, B, groups) {
+    return (groups || INSTAT_GROUPS).map(function (g) {
+      return '<div class="cmp-group"><div class="eyebrow">' + esc(g.title) + '</div>' +
+        '<div class="cmp">' + g.rows.map(function (r) {
+          return cmpRow(r, us, them, A, B, true);
+        }).join('') + '</div></div>';
+    }).join('');
+  }
+
+  function viewInstatEquipes(d) {
+    var m = currentMatch(d);
+    if (!m) return '<p class="empty">Aucun match dans ce classeur.</p>';
+    var A = d.teamName, B = m.opponent;
+    return '<div class="stack"><div class="card">' +
+      '<header><div><h2>Comparatif détaillé</h2>' +
+      '<p class="hint">' + esc(dateLong(m.date)) + ' contre ' + esc(B) + '. ' +
+      'Les barres se rejoignent au centre : la moitié la plus longue a fait plus. ' +
+      'Le gras dit qui a fait <em>mieux</em>, et la colonne de droite donne l’écart.</p></div>' +
+      legend(A, B, 'dot') + '</header>' +
+      valenceLegend(A, B) +
+      instatCompare(d, m.us, m.them, A, B) + '</div></div>';
+  }
+
+  /* --------------------------------------------------------------- saison */
+
+  // Courbe simple a deux series sur les journees. Sert au xG cree / concede
+  // et aux points reels / attendus.
+  function seasonChart(matches, series, opts) {
+    opts = opts || {};
+    var W = 700, H = 230, mL = 34, mR = 44, mT = 16, mB = 26;
+    var n = matches.length;
+    var maxV = 0;
+    series.forEach(function (s) {
+      s.values.forEach(function (v) { if (v != null && v > maxV) maxV = v; });
+    });
+    maxV = (maxV || 1) * 1.12;
+    function X(i) { return n < 2 ? mL : mL + i / (n - 1) * (W - mL - mR); }
+    function Y(v) { return H - mB - (v || 0) / maxV * (H - mT - mB); }
+
+    var grid = '', i;
+    var stepY = maxV > 30 ? 10 : (maxV > 12 ? 5 : (maxV > 4 ? 1 : 0.5));
+    for (i = 0; i <= maxV; i += stepY) {
+      grid += '<line x1="' + mL + '" y1="' + nf(Y(i)) + '" x2="' + (W - mR) + '" y2="' + nf(Y(i)) +
+        '" class="grid-line"/><text x="' + (mL - 6) + '" y="' + nf(Y(i) + 3) +
+        '" class="tick" text-anchor="end">' + f(i, stepY < 1 ? 1 : 0) + '</text>';
+    }
+    var xt = '';
+    var stepX = n > 24 ? 5 : (n > 12 ? 3 : 2);
+    for (i = 0; i < n; i += stepX) {
+      xt += '<text x="' + nf(X(i)) + '" y="' + (H - mB + 14) + '" class="tick" text-anchor="middle">J' + (i + 1) + '</text>';
+    }
+
+    var paths = series.map(function (s) {
+      var pth = '';
+      s.values.forEach(function (v, k) {
+        pth += (k ? ' L ' : 'M ') + nf(X(k)) + ' ' + nf(Y(v));
+      });
+      return '<path d="' + pth + '" class="' + s.cls + '"' +
+        (s.dash ? ' stroke-dasharray="5 4"' : '') + '/>';
+    }).join('');
+
+    var dots = series.map(function (s) {
+      if (!s.dots) return '';
+      return s.values.map(function (v, k) {
+        var m = matches[k];
+        return '<circle cx="' + nf(X(k)) + '" cy="' + nf(Y(v)) + '" r="3.4" class="' +
+          s.mark + ' dot-ring" data-tip="J' + (k + 1) + ' · ' + esc(m.opponent) + ' ' +
+          m.gf + '-' + m.ga + ' — ' + esc(s.name) + ' ' + f(v, 2) + '"/>';
+      }).join('');
+    }).join('');
+
+    var labels = series.map(function (s) {
+      var last = s.values[s.values.length - 1];
+      return '<text x="' + (W - mR + 6) + '" y="' + nf(Y(last) + 3) + '" class="direct-label ' +
+        s.lab + '">' + f(last, opts.d == null ? 1 : opts.d) + '</text>';
+    }).join('');
+
+    return '<div class="figure"><svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' +
+      esc(opts.title || 'Évolution sur la saison') + '">' + grid + xt +
+      '<line x1="' + mL + '" y1="' + (H - mB) + '" x2="' + (W - mR) + '" y2="' + (H - mB) + '" class="axis-line"/>' +
+      paths + dots + labels +
+      '<text x="' + mL + '" y="' + (mT - 3) + '" class="axis-title">' + esc(opts.title || '') + '</text>' +
+      '</svg></div>';
+  }
+
+  function formStrip(d) {
+    return '<div class="form">' + d.matches.map(function (m, i) {
+      return '<span class="fchip ' + m.result + '" data-tip="J' + (i + 1) + ' · ' +
+        (m.home ? 'domicile' : 'extérieur') + ' contre ' + esc(m.opponent) + ' · ' +
+        m.gf + '-' + m.ga + '" data-mi="' + i + '" role="button" tabindex="0">' +
+        m.result + '</span>';
+    }).join('') + '</div>';
+  }
+
+  function viewInstatSaison(d) {
+    if (!d.matches.length) return '<p class="empty">Aucun match dans ce classeur.</p>';
+    var A = d.teamName, B = 'Adversaires';
+    var n = d.matches.length;
+    var r = d.record;
+
+    var xgS = { name: 'xG créé', cls: 'line-a', mark: 'mark-a', lab: 'a', dots: true,
+      values: d.matches.map(function (m) { return iv(m.us, 'xG (expected goals)') || 0; }) };
+    var oxgS = { name: 'xG concédé', cls: 'line-b', mark: 'mark-b', lab: 'b', dots: true,
+      values: d.matches.map(function (m) { return iv(m.them, 'xG (expected goals)') || 0; }) };
+
+    // Points reels et attendus decrivent la MEME equipe : meme teinte, et le
+    // trait pointille distingue l'attendu du reel. Deux couleurs diraient a
+    // tort qu'il s'agit de deux entites.
+    var ptS = { name: 'points', cls: 'line-a', mark: 'mark-a', lab: 'a',
+      values: d.matches.map(function (m) { return m.cumPoints; }) };
+    var xptS = { name: 'xPoints', cls: 'line-a', mark: 'mark-a', lab: 'a', dash: true,
+      values: d.matches.map(function (m) { return m.cumXPoints; }) };
+
+    var ecartPts = d.points - d.xPoints;
+    var ecartButs = d.goalsFor - d.xg;
+
+    var season = d.season
+      ? '<div class="card"><header><div><h2>' + esc(A) + ' contre la moyenne de ses adversaires</h2>' +
+        '<p class="hint">Les lignes « Average per match » du classeur, sur les mêmes ' +
+        'mesures que la feuille de match. C’est le portrait de la saison en un tableau.</p></div>' +
+        legend(A, B, 'dot') + '</header>' +
+        valenceLegend(A, B) +
+        instatCompare(d, d.season.us, d.season.them, A, B) + '</div>'
+      : '';
+
+    return '<div class="stack">' +
+      '<div class="card"><header><div><h2>Saison ' + n + ' matchs</h2>' +
+      '<p class="hint">Du ' + esc(dateLong(d.matches[0].date)) + ' au ' +
+      esc(dateLong(d.matches[n - 1].date)) + '. Cliquez une pastille pour ouvrir la feuille de ce match.</p></div></header>' +
+      formStrip(d) +
+      '<div class="tiles" style="margin-top:1rem">' +
+      '<div class="tile"><div class="label">Bilan</div><div class="duo"><span class="v">' +
+      r.V + 'V ' + r.N + 'N ' + r.D + 'D</span></div><div class="tilefoot"><span class="note">' +
+      n + ' matchs</span></div></div>' +
+      soloTile('Points', d.points, 0, f(d.xPoints, 1) + ' attendus', ecartPts, 1) +
+      soloTile('Buts marqués', d.goalsFor, 0, f(d.xg, 1) + ' xG', ecartButs, 1) +
+      soloTile('Buts encaissés', d.goalsAgainst, 0, f(d.oxg, 1) + ' xG concédé', -(d.goalsAgainst - d.oxg), 1) +
+      '</div></div>' +
+
+      '<div class="card"><header><div><h2>Occasions créées et concédées</h2>' +
+      '<p class="hint">Un point par match. Au-dessus, on se procure plus que l’on ne concède.</p></div>' +
+      legend('xG créé', 'xG concédé', 'line') + '</header>' +
+      seasonChart(d.matches, [xgS, oxgS], { title: 'xG par match', d: 2 }) + '</div>' +
+
+      '<div class="card"><header><div><h2>Points réels et points attendus</h2>' +
+      '<p class="hint">Le trait plein est ce qui a été pris, le pointillé ce que le contenu ' +
+      'valait. Un écart durable dit que le résultat ne suit pas le jeu — dans un sens ou dans l’autre.</p></div></header>' +
+      seasonChart(d.matches, [ptS, xptS], { title: 'points cumulés', d: 0 }) + '</div>' +
+
+      season +
+      '</div>';
+  }
+
+  // Tuile a une seule valeur : la saison n'oppose pas deux equipes ici.
+  function soloTile(label, v, dec, note, ecart, dir) {
+    var cell = ecart == null ? '' :
+      delta(ecart, 0, dir == null ? 1 : dir, 1, true, 'a');
+    return '<div class="tile"><div class="label">' + esc(label) + '</div>' +
+      '<div class="duo"><span class="v">' + f(v, dec) + '</span></div>' +
+      '<div class="tilefoot">' + cell + '<span class="note">' + esc(note) + '</span></div></div>';
+  }
+
+  /* -------------------------------------------------------------- joueurs */
+
+  function viewInstatJoueurs(d) {
+    if (!d.players.length) {
+      return '<div class="stack"><div class="card"><p class="empty">' +
+        'Aucun fichier joueurs chargé. Déposez « Player statistics.xlsx » ' +
+        'en plus du fichier de matchs.</p></div></div>';
+    }
+    var cols = INSTAT_COLS[S.instatView] || INSTAT_COLS.general;
+    var rows = d.players.slice();
+
+    var key = S.sortKey;
+    if (!key || (key !== 'name' && cols.map(function (c) { return c[0]; }).indexOf(key) === -1)) {
+      key = 'Index';
+    }
+    rows.sort(function (p, q) {
+      if (key === 'name') return p.name.localeCompare(q.name) * S.sortDir;
+      var x = ipv(p, key), y = ipv(q, key);
+      if (x == null) x = -Infinity;
+      if (y == null) y = -Infinity;
+      if (x === y) return p.name.localeCompare(q.name);
+      return (x - y) * S.sortDir;
+    });
+
+    var head = '<tr><th data-sort="name">Joueur</th>' + cols.map(function (c) {
+      var on = key === c[0];
+      return '<th data-sort="' + esc(c[0]) + '"' +
+        (on ? ' aria-sort="' + (S.sortDir < 0 ? 'descending' : 'ascending') + '"' : '') +
+        ' title="' + esc(c[0]) + '">' + esc(c[1]) +
+        (on ? '<span class="arrow">' + (S.sortDir < 0 ? '▼' : '▲') + '</span>' : '') + '</th>';
+    }).join('') + '</tr>';
+
+    var magMax = rows.reduce(function (m, p) {
+      var v = ipv(p, key);
+      return Math.max(m, typeof v === 'number' ? Math.abs(v) : 0);
+    }, 0);
+
+    var body = rows.map(function (p) {
+      return '<tr>' +
+        '<td><span class="who"><span class="chip a"></span>' +
+        '<span class="nb">' + (p.jersey != null ? esc(String(p.jersey)) : '') + '</span>' +
+        '<span>' + esc(p.name) + '</span>' +
+        '<span class="pos" title="' + esc(instatPosLong(p.Position)) + '">' +
+        esc(p.Position || '') + '</span></span></td>' +
+        cols.map(function (c) {
+          var v = ipv(p, c[0]);
+          var dd = c[2];
+          var txt = (v == null || v === 0)
+            ? '<span style="color:var(--ink-3)">' + f(v == null ? 0 : 0, dd) + '</span>'
+            : f(v, dd);
+          if (c[0] !== key || !magMax || typeof v !== 'number') return '<td>' + txt + '</td>';
+          return '<td class="mag"><span class="bar" style="width:' +
+            nf(Math.abs(v) / magMax * 100) + '%"></span><span>' + txt + '</span></td>';
+        }).join('') +
+        '</tr>';
+    }).join('');
+
+    return '<div class="stack"><div class="card">' +
+      '<header><div><h2>Joueurs — cumul de la saison</h2>' +
+      '<p class="hint"><b>Ces chiffres ne sont pas ceux d’un match.</b> L’export InStat ' +
+      '« Player statistics » est un total sur toute la saison ; il ne contient aucune ' +
+      'ventilation par rencontre. ' +
+      (S.per90 ? 'Valeurs ramenées à 90 minutes : un remplaçant devient comparable à un titulaire.'
+        : 'Valeurs brutes cumulées : un joueur peu utilisé paraîtra faible. Passez en « par 90 min » pour comparer.') +
+      '</p></div></header>' +
+      '<div class="controls">' +
+      '<div class="seg" data-role="instatview">' +
+      '<button type="button" data-v="general" aria-pressed="' + (S.instatView === 'general') + '">Général</button>' +
+      '<button type="button" data-v="offensif" aria-pressed="' + (S.instatView === 'offensif') + '">Offensif</button>' +
+      '<button type="button" data-v="defensif" aria-pressed="' + (S.instatView === 'defensif') + '">Défensif</button>' +
+      '</div>' +
+      '<div class="seg" data-role="per90">' +
+      '<button type="button" data-v="0" aria-pressed="' + (!S.per90) + '">Total saison</button>' +
+      '<button type="button" data-v="1" aria-pressed="' + (S.per90) + '">Par 90 min</button>' +
+      '</div>' +
+      '</div>' +
+      '<div class="tablewrap"><table><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' +
+      '</div></div>';
+  }
+
+  // Valeur d'un joueur, ramenee a 90 minutes si demande. Un pourcentage, un
+  // Index ou un nombre de matchs ne se divisent pas par le temps joue.
+  function ipv(p, k) {
+    if (k === 'name') return p.name;
+    var v = p[k];
+    if (typeof v !== 'number' || !isFinite(v)) return null;
+    if (!S.per90 || instatPer90Exempt(k)) return v;
+    if (!p.minutes) return null;
+    return v / p.minutes * 90;
+  }
+
   /* ------------------------------------------------------------- import */
   function viewImport() {
     return '<div class="stack"><div class="card">' +
@@ -803,12 +1336,17 @@
       'Vous pouvez déposer plusieurs fichiers d’un coup (événements + composition).</p></div></header>' +
       '<div class="drop" id="drop">' +
       '<h2>Déposez le fichier ici</h2>' +
-      '<p class="hint">JSON StatsBomb, XML de codage vidéo, ou CSV</p>' +
+      '<p class="hint">Classeur InStat (.xlsx), JSON StatsBomb, XML de codage vidéo, ou CSV</p>' +
       '<button type="button" class="btn" id="pick">Choisir un fichier</button>' +
       '<input type="file" id="file" accept=".json,.xml,.csv,.txt" multiple>' +
       '</div>' +
       '<div id="status"></div>' +
       '<div class="fmt">' +
+      '<div class="f"><code>.xlsx</code><p><b>InStat / Hudl</b> — les deux exports du club. ' +
+      '<i>Match statistics</i> donne la saison, deux lignes par rencontre (nous et l’adversaire) : ' +
+      'sélecteur de journée, comparatif détaillé et bilan de saison. <i>Player statistics</i> ' +
+      'ajoute l’onglet Joueurs — c’est un <b>cumul de saison</b>, il ne contient aucune ' +
+      'ventilation par match. Déposez les deux ensemble, ou l’un puis l’autre.</p></div>' +
       '<div class="f"><code>.json</code><p><b>StatsBomb</b> — un fichier d’événements par match. ' +
       'Rapport complet : équipes, joueurs, xG, tirs, pressing, réseau de passes. Ajoutez le fichier de composition ' +
       'pour les numéros et le temps de jeu exact.</p></div>' +
@@ -886,6 +1424,10 @@
     ['resume', 'Résumé'], ['equipes', 'Équipes'], ['joueurs', 'Joueurs'],
     ['duel', 'Duel'], ['import', 'Données']
   ];
+  var TABS_INSTAT = [
+    ['resume', 'Résumé'], ['equipes', 'Équipes'], ['saison', 'Saison'],
+    ['joueurs', 'Joueurs'], ['import', 'Données']
+  ];
 
   /* Le point de vue est ce qui donne un sens au vert et au rouge : sans
      equipe de reference, "mieux" ne veut rien dire dans un match a deux.    */
@@ -921,6 +1463,7 @@
     // Au premier rendu d'un match, on se place du cote de l'equipe A : sans
     // point de vue le vert et le rouge n'auraient rien a dire.
     if (d && d.kind === 'statsbomb' && S.pov === null && !S.povTouched) S.pov = d.teamNames[0];
+    if (d && d.kind === 'instat' && S.pov === null && !S.povTouched) S.pov = d.teamName;
     var head = document.getElementById('head');
     var main = document.getElementById('main');
     var tabs = [];
@@ -945,6 +1488,9 @@
             (S.tab === t[0]) + '">' + esc(t[1]) + '</button>';
         }).join('') + '</div>' + headControls(A, B) + '</div></div>';
       tabs = TABS_SB;
+    } else if (d && d.kind === 'instat') {
+      head.innerHTML = instatHead(d);
+      tabs = TABS_INSTAT;
     } else {
       var sub = 'importez un fichier pour commencer';
       if (d && d.kind === 'sportscode') sub = d.instances.length + ' actions codées · ' + d.codes.length + ' codes';
@@ -964,10 +1510,58 @@
       else if (S.tab === 'duel') html = viewDuel(d);
       else html = viewImport();
     }
+    else if (d.kind === 'instat') {
+      if (S.tab === 'resume') html = viewInstatResume(d);
+      else if (S.tab === 'equipes') html = viewInstatEquipes(d);
+      else if (S.tab === 'saison') html = viewInstatSaison(d);
+      else if (S.tab === 'joueurs') html = viewInstatJoueurs(d);
+      else html = viewImport();
+    }
     else if (d.kind === 'sportscode') html = viewSportsCode(d) + viewImport();
     else if (d.kind === 'csv') html = viewCsv(d) + viewImport();
 
     main.innerHTML = '<div class="wrap">' + html + footer() + '</div>';
+  }
+
+  function instatHead(d) {
+    var m = currentMatch(d);
+    var n = d.matches.length;
+    var A = d.teamName;
+
+    var score = m
+      ? '<div class="score"><span>' + m.gf + '</span><span class="sep">:</span><span>' + m.ga + '</span></div>'
+      : '<div></div>';
+
+    var right = m
+      ? '<div class="side right"><div class="club">' + esc(m.opponent) + '</div>' +
+        '<div class="meta"><span class="chip b"></span>' + esc(m.oppFormation || '') + '</div></div>'
+      : '<div></div>';
+
+    var poss = m && iv(m.us, 'Ball possession, %') != null
+      ? '<div class="possbar" title="Possession"><span class="pa" style="width:' +
+        nf(iv(m.us, 'Ball possession, %'), 2) + '%"></span><span class="gapline"></span>' +
+        '<span class="pb" style="width:' + nf(iv(m.them, 'Ball possession, %'), 2) + '%"></span></div>'
+      : '';
+
+    // Le selecteur de journee est la commande principale de ce mode : sans lui,
+    // on ne voit qu'un match sur dix-neuf.
+    var sel = n ? '<label class="field mdsel"><span class="eyebrow">Journée</span>' +
+      '<select data-role="matchday">' + d.matches.map(function (mm, i) {
+        return '<option value="' + i + '"' + (m === mm ? ' selected' : '') + '>' +
+          esc(matchLabel(mm, i, n)) + '</option>';
+      }).join('') + '</select></label>' : '';
+
+    return '<div class="wrap"><div class="scoreline">' +
+      '<div class="side"><div class="club">' + esc(A) + '</div>' +
+      '<div class="meta"><span class="chip a"></span>' + esc(m ? (m.formation || '') : (d.code || '')) + '</div></div>' +
+      score + right + '</div></div>' + poss +
+      '<div class="wrap"><div class="hbar">' + sel +
+      '<div class="tabs" role="tablist">' +
+      TABS_INSTAT.map(function (t) {
+        return '<button type="button" class="tab" role="tab" data-tab="' + t[0] + '" aria-selected="' +
+          (S.tab === t[0]) + '">' + esc(t[1]) + '</button>';
+      }).join('') + '</div>' +
+      headControls(A, m ? m.opponent : 'Adversaire') + '</div></div>';
   }
 
   function footer() {
@@ -975,6 +1569,8 @@
     var left = 'aucun match chargé';
     if (d && d.kind === 'statsbomb') {
       left = f(d.match.events) + ' événements · ' + d.players.length + ' joueurs · ' + d.match.minutes + ' minutes';
+    } else if (d && d.kind === 'instat') {
+      left = d.matches.length + ' matchs · ' + d.players.length + ' joueurs · export InStat';
     } else if (d && d.kind === 'sportscode') {
       left = d.instances.length + ' instances lues';
     } else if (d && d.kind === 'csv') {
@@ -1007,6 +1603,23 @@
   });
   on('[data-role="per90"] button', 'click', function (e, t) { S.per90 = t.dataset.v === '1'; render(); });
   on('[data-role="netteam"] button', 'click', function (e, t) { S.netTeam = t.dataset.team; render(); });
+  on('[data-role="instatview"] button', 'click', function (e, t) {
+    S.instatView = t.dataset.v;
+    S.sortKey = 'Index'; S.sortDir = -1;
+    render();
+  });
+  on('.fchip', 'click', function (e, t) {
+    S.mi = parseInt(t.dataset.mi, 10);
+    S.tab = 'resume';
+    render();
+    window.scrollTo(0, 0);
+  });
+  on('.fchip', 'keydown', function (e, t) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    t.click();
+  });
+
   on('[data-role="pov"] button', 'click', function (e, t) {
     S.pov = t.dataset.v || null;
     S.povTouched = true;   // un choix explicite de Neutre ne doit pas etre ecrase
@@ -1043,6 +1656,7 @@
     var r = e.target.dataset ? e.target.dataset.role : null;
     if (r === 'duelA') { S.duelA = e.target.value; render(); }
     else if (r === 'duelB') { S.duelB = e.target.value; render(); }
+    else if (r === 'matchday') { S.mi = parseInt(e.target.value, 10); S.povTouched = false; S.pov = null; render(); }
     else if (r === 'csvA') { S.csvA = parseInt(e.target.value, 10); render(); }
     else if (r === 'csvB') { S.csvB = parseInt(e.target.value, 10); render(); }
   });
@@ -1082,27 +1696,64 @@
     return Array.isArray(j) && j.length > 0 && j[0] && j[0].team_name && j[0].lineup;
   }
 
+  function readFile(file, asBuffer) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve(r.result); };
+      r.onerror = function () { reject(new Error('lecture impossible.')); };
+      if (asBuffer) r.readAsArrayBuffer(file); else r.readAsText(file);
+    });
+  }
+
+  // Un .xlsx doit etre decompresse : la lecture devient asynchrone, et tout
+  // le pipeline avec elle. On attend donc que TOUS les fichiers deposes soient
+  // traites avant de reconstruire le rapport - sinon deposer les deux
+  // classeurs InStat d'un coup n'en garderait qu'un.
   function handleFiles(list) {
     var files = Array.prototype.slice.call(list);
     if (!files.length) return;
-    var remaining = files.length;
     var problems = [];
 
-    files.forEach(function (file) {
-      var reader = new FileReader();
-      reader.onload = function () {
-        try {
-          consume(file.name, String(reader.result));
-        } catch (err) {
-          problems.push(file.name + ' : ' + err.message);
-        }
-        if (--remaining === 0) finish(problems);
-      };
-      reader.onerror = function () {
-        problems.push(file.name + ' : lecture impossible.');
-        if (--remaining === 0) finish(problems);
-      };
-      reader.readAsText(file);
+    if (files.some(function (f) { return /\.xlsx?$/i.test(f.name); })) {
+      setStatus('ok', 'Lecture du classeur…');
+    }
+
+    Promise.all(files.map(function (file) {
+      var xl = /\.xlsx?$/i.test(file.name);
+      return readFile(file, xl)
+        .then(function (data) {
+          return xl ? consumeXlsx(file.name, data) : consume(file.name, String(data));
+        })
+        .catch(function (err) { problems.push(file.name + ' : ' + err.message); });
+    })).then(function () { finish(problems); });
+  }
+
+  // InStat nomme ses exports "15.07.2026 - Kazma - Match statistics.xlsx".
+  // Le nom du club est donc dans le nom de fichier, et nulle part dans la
+  // feuille : la colonne Team ne donne qu'un code ("KAZ").
+  function teamFromFilename(name) {
+    var m = /^\s*[\d.\-]+\s*-\s*(.+?)\s*-\s*(?:match|player)\s+statistics/i.exec(name);
+    return m ? m[1].trim() : null;
+  }
+
+  function consumeXlsx(name, buffer) {
+    if (!XLSX) return Promise.reject(new Error('lecteur xlsx indisponible.'));
+    return XLSX.read(new Uint8Array(buffer)).then(function (rows) {
+      if (!rows.length) throw new Error('classeur vide.');
+      var hdr = rows[0].map(function (h) { return String(h == null ? '' : h).trim(); });
+      var team = teamFromFilename(name);
+      if (team) S.instat.name = team;
+
+      if (hdr.indexOf('Player') >= 0 && hdr.indexOf('Minutes played') >= 0) {
+        S.instat.players = rows;
+        return;
+      }
+      if (hdr.indexOf('Team') >= 0 && hdr.indexOf('Opponent') >= 0 && hdr.indexOf('Goals') >= 0) {
+        S.instat.matches = rows;
+        return;
+      }
+      throw new Error('classeur lu (' + rows.length + ' lignes), mais ce n’est ni ' +
+        '« Match statistics » ni « Player statistics » InStat.');
     });
   }
 
@@ -1128,6 +1779,23 @@
   }
 
   function finish(problems) {
+    // Les deux classeurs InStat peuvent arriver separement : on rebatit le
+    // rapport avec tout ce qui a ete depose jusqu'ici, pas seulement le
+    // dernier fichier.
+    if (S.instat.matches || S.instat.players) {
+      try {
+        S.data = KMR.analyseInstat(S.instat.matches, S.instat.players);
+        S.data.teamName = S.instat.name || S.data.code || 'Notre équipe';
+        S.tab = S.data.matches.length ? 'resume' : 'joueurs';
+        S.mi = null;
+        S.pov = null; S.povTouched = false;
+        S.sortKey = 'Index'; S.sortDir = -1;
+        S.per90 = false; S.instatView = 'general';
+      } catch (err) {
+        problems.push(err.message);
+      }
+    }
+
     if (S.pending.events) {
       try {
         S.data = KMR.analyseStatsBomb(S.pending.events, S.pending.lineups);
@@ -1148,9 +1816,24 @@
     if (problems.length) setStatus('err', problems.join(' · '));
     else if (S.data) {
       var d = S.data;
-      setStatus('ok', d.kind === 'statsbomb'
-        ? 'Rapport généré : ' + d.teamNames[0] + ' ' + d.match.score[0] + '-' + d.match.score[1] + ' ' + d.teamNames[1] + '.'
-        : 'Fichier chargé.');
+      var msg;
+      if (d.kind === 'statsbomb') {
+        msg = 'Rapport généré : ' + d.teamNames[0] + ' ' + d.match.score[0] + '-' +
+          d.match.score[1] + ' ' + d.teamNames[1] + '.';
+      } else if (d.kind === 'instat') {
+        msg = 'Export InStat lu : ' + d.matches.length + ' matchs' +
+          (d.players.length ? ' et ' + d.players.length + ' joueurs' : '') +
+          (d.matches.length ? ' — ' + d.record.V + 'V ' + d.record.N + 'N ' + d.record.D + 'D.' : '.');
+        if (!d.players.length) msg += ' Ajoutez « Player statistics.xlsx » pour l’onglet Joueurs.';
+        if (d.scoreColumnSuspect) {
+          setStatus('err', 'La colonne « Score » ne concorde plus avec les buts par équipe : ' +
+            'le format a peut-être changé. Les résultats sont calculés depuis la colonne Goals.');
+          return;
+        }
+      } else {
+        msg = 'Fichier chargé.';
+      }
+      setStatus('ok', msg);
     }
   }
 

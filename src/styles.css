@@ -839,6 +839,43 @@ td.mag > span { position: relative; }
   .tablewrap thead th { position: static; }
 }
 
+/* ------------------------------------------------------- saison (InStat) */
+
+/* Bande de forme : une pastille par match. La LETTRE porte le resultat, la
+   couleur ne fait que le renforcer - meme regle que la colonne d'ecart. */
+.form { display: flex; flex-wrap: wrap; gap: .28rem; }
+.fchip {
+  width: 1.55rem;
+  height: 1.55rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid transparent;
+  user-select: none;
+}
+.fchip.V { background: var(--val-good-wash); color: var(--val-good); border-color: var(--val-good-mark); }
+.fchip.D { background: var(--val-bad-wash);  color: var(--val-bad);  border-color: var(--val-bad-mark); }
+.fchip.N { background: var(--surface-2);     color: var(--ink-2);    border-color: var(--rule); }
+.fchip:hover { transform: translateY(-1px); }
+
+/* Le selecteur de journee est la commande principale du mode saison :
+   il passe devant les onglets et garde sa place quand ils defilent. */
+.hbar .mdsel { flex: 0 0 auto; max-width: 22rem; }
+.hbar .mdsel select { max-width: 100%; }
+
+@media (max-width: 720px) {
+  .hbar .mdsel { order: -1; width: 100%; max-width: none; }
+}
+
+@media print {
+  .fchip { border-color: var(--rule); }
+}
+
 /* --------------------------------------------------------------- impression */
 @media print {
   :root { --plane: #fff; --surface: #fff; --shadow: none; }

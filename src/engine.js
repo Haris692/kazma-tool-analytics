@@ -614,8 +614,195 @@
     return out;
   }
 
+  /* ==================================================== InStat / Hudl (xlsx)
+
+     Deux exports, deux formes :
+       - "Match statistics"  : une saison, deux lignes par match (nous, eux)
+       - "Player statistics" : un cumul de saison, une ligne par joueur
+
+     Trois pieges du format, qui faussent tout en silence si on les ignore :
+
+     1. La colonne "Score" est ecrite DOMICILE:EXTERIEUR, et non nous:eux. Sur
+        un match a l'exterieur elle est donc inversee. Lue naivement, elle
+        transforme quatre defaites en victoires sur cette saison. Tout est
+        calcule depuis la colonne "Goals" de chaque ligne ; "Score" ne sert
+        plus que de controle croise.
+     2. Les pourcentages sont stockes en fractions : 0.89 vaut 89 %.
+     3. "Ball possession, min." est une chaine "m:ss" - exactement la meme
+        forme que le score "1:2". On tranche donc par colonne, jamais sur
+        l'allure de la valeur.                                                */
+
+  function instatValue(header, raw) {
+    var s = String(raw == null ? '' : raw).trim();
+    if (s === '' || s === '-') return null;
+    if (/, %( of total)?$/.test(header)) {
+      var p = parseFloat(s);
+      return isFinite(p) ? p * 100 : null;
+    }
+    if (/, min\.$/.test(header)) {
+      var m = /^(\d+):(\d+)$/.exec(s);
+      if (m) return parseInt(m[1], 10) + parseInt(m[2], 10) / 60;
+      var f = parseFloat(s);
+      return isFinite(f) ? f : null;
+    }
+    // "3-4-3" et "0:0" doivent rester des chaines : parseFloat en tirerait 3 et 0.
+    if (!/^-?[0-9]+(\.[0-9]+)?$/.test(s)) return s;
+    return parseFloat(s);
+  }
+
+  function instatRow(hdr, row) {
+    var o = {};
+    for (var i = 0; i < hdr.length; i++) {
+      if (!hdr[i]) continue;
+      o[hdr[i]] = instatValue(hdr[i], row[i]);
+    }
+    return o;
+  }
+
+  function inum(v) { return typeof v === 'number' && isFinite(v) ? v : 0; }
+
+  // Excel compte les jours depuis le 30/12/1899 ; la fraction est l'heure.
+  function excelDate(serial) {
+    var n = parseFloat(serial);
+    if (!isFinite(n)) return null;
+    var d = new Date(Math.round((n - 25569) * 86400000));
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function analyseInstatMatches(rows) {
+    if (!rows || rows.length < 3) throw new Error('Feuille de matchs vide.');
+    var hdr = rows[0].map(function (h) { return String(h == null ? '' : h).trim(); });
+
+    var iDate = hdr.indexOf('Date'), iHA = hdr.indexOf('h / a');
+    var iOpp = hdr.indexOf('Opponent'), iScore = hdr.indexOf('Score');
+    var iTeam = hdr.indexOf('Team'), iGoals = hdr.indexOf('Goals');
+    if (iDate < 0 || iTeam < 0 || iGoals < 0 || iOpp < 0) {
+      throw new Error('Ce classeur n\u2019a pas la forme d\u2019un export InStat ' +
+        '\u00ab Match statistics \u00bb (colonnes Date, Team, Opponent et Goals attendues).');
+    }
+
+    var matches = [], season = null, code = null, mismatches = 0, checked = 0;
+
+    for (var i = 1; i < rows.length; i++) {
+      var a = rows[i], b = rows[i + 1] || [];
+      var first = String(a[iDate] == null ? '' : a[iDate]).trim();
+      if (!first) continue;
+
+      var us = instatRow(hdr, a), them = instatRow(hdr, b);
+
+      if (/^average/i.test(first)) { season = { us: us, them: them }; i++; continue; }
+
+      var d = excelDate(first);
+      if (!d) continue;
+      if (code == null) code = us['Team'];
+
+      var gf = inum(us['Goals']), ga = inum(them['Goals']);
+      var ha = String(a[iHA] == null ? '' : a[iHA]).trim().toLowerCase();
+      var home = ha !== 'a';
+
+      // Controle croise : "Score" doit se relire domicile:exterieur.
+      var sc = String(a[iScore] == null ? '' : a[iScore]).trim();
+      var pm = /^(\d+):(\d+)$/.exec(sc);
+      if (pm) {
+        checked++;
+        var sh = parseInt(pm[1], 10), sa = parseInt(pm[2], 10);
+        if ((home ? sh : sa) !== gf || (home ? sa : sh) !== ga) mismatches++;
+      }
+
+      matches.push({
+        date: d,
+        home: home,
+        opponent: String(a[iOpp] == null ? '' : a[iOpp]).trim(),
+        oppCode: them['Team'],
+        gf: gf, ga: ga,
+        result: gf > ga ? 'V' : (gf === ga ? 'N' : 'D'),
+        points: gf > ga ? 3 : (gf === ga ? 1 : 0),
+        formation: us['Tactics (initial)'] || '',
+        oppFormation: them['Tactics (initial)'] || '',
+        us: us, them: them
+      });
+      i++;
+    }
+
+    if (!matches.length) throw new Error('Aucun match lisible dans ce classeur.');
+    matches.sort(function (x, y) { return x.date - y.date; });
+
+    var tally = { V: 0, N: 0, D: 0 };
+    var pts = 0, xpts = 0, gf = 0, ga = 0, xg = 0, oxg = 0;
+    matches.forEach(function (m) {
+      tally[m.result]++;
+      pts += m.points;
+      xpts += inum(m.us['xPoints']);
+      gf += m.gf; ga += m.ga;
+      xg += inum(m.us['xG (expected goals)']);
+      oxg += inum(m.them['xG (expected goals)']);
+      m.cumPoints = pts;
+      m.cumXPoints = xpts;
+    });
+
+    return {
+      code: code, matches: matches, season: season, headers: hdr,
+      record: tally, points: pts, xPoints: xpts,
+      goalsFor: gf, goalsAgainst: ga, xg: xg, oxg: oxg,
+      // Si le controle croise casse partout, la regle domicile:exterieur ne
+      // tient plus : le format a change, et il faut le dire plutot que mentir.
+      scoreColumnSuspect: checked > 0 && mismatches > checked / 2
+    };
+  }
+
+  function analyseInstatPlayers(rows) {
+    if (!rows || rows.length < 2) throw new Error('Feuille de joueurs vide.');
+    var hdr = rows[0].map(function (h) { return String(h == null ? '' : h).trim(); });
+    var iName = hdr.indexOf('Player');
+    if (iName < 0) {
+      throw new Error('Ce classeur n\u2019a pas la forme d\u2019un export InStat ' +
+        '\u00ab Player statistics \u00bb (colonne Player attendue).');
+    }
+    var players = [];
+    for (var i = 1; i < rows.length; i++) {
+      var name = String(rows[i][iName] == null ? '' : rows[i][iName]).trim();
+      if (!name) continue;
+      var o = instatRow(hdr, rows[i]);
+      o.name = name;
+      o.jersey = o['\u2116'];
+      o.minutes = inum(o['Minutes played']);
+      players.push(o);
+    }
+    if (!players.length) throw new Error('Aucun joueur lisible dans ce classeur.');
+    return { players: players, headers: hdr };
+  }
+
+  // Les deux classeurs sont independants : on doit pouvoir n'en deposer qu'un.
+  function analyseInstat(matchRows, playerRows) {
+    var m = matchRows ? analyseInstatMatches(matchRows) : null;
+    var p = playerRows ? analyseInstatPlayers(playerRows) : null;
+    if (!m && !p) throw new Error('Aucun classeur InStat exploitable.');
+    return {
+      kind: 'instat',
+      code: m ? m.code : null,
+      matches: m ? m.matches : [],
+      season: m ? m.season : null,
+      record: m ? m.record : { V: 0, N: 0, D: 0 },
+      points: m ? m.points : 0,
+      xPoints: m ? m.xPoints : 0,
+      goalsFor: m ? m.goalsFor : 0,
+      goalsAgainst: m ? m.goalsAgainst : 0,
+      xg: m ? m.xg : 0,
+      oxg: m ? m.oxg : 0,
+      scoreColumnSuspect: m ? m.scoreColumnSuspect : false,
+      matchHeaders: m ? m.headers : [],
+      players: p ? p.players : [],
+      playerHeaders: p ? p.headers : []
+    };
+  }
+
   root.KMR = {
     analyseStatsBomb: analyseStatsBomb,
+    analyseInstat: analyseInstat,
+    analyseInstatMatches: analyseInstatMatches,
+    analyseInstatPlayers: analyseInstatPlayers,
+    instatValue: instatValue,
+    excelDate: excelDate,
     analyseSportsCode: analyseSportsCode,
     parseCSV: parseCSV,
     numericColumns: numericColumns,

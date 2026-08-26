@@ -28,6 +28,7 @@ def main():
 
     tpl = read(os.path.join(SRC, 'index.template.html'))
     styles = read(os.path.join(SRC, 'styles.css'))
+    xlsxjs = read(os.path.join(SRC, 'xlsx.js'))
     engine = read(os.path.join(SRC, 'engine.js'))
     app = read(os.path.join(SRC, 'app.js'))
 
@@ -47,6 +48,7 @@ def main():
     out = tpl
     for token, value in (
         ('__STYLES__', styles),
+        ('__XLSX__', xlsxjs),
         ('__ENGINE__', engine),
         ('__APP__', app),
         ('__DEMO_EVENTS__', demo_events),

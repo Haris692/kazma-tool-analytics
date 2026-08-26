@@ -28,6 +28,7 @@ Onglet **Données** pour charger son propre match : glisser-déposer, ou bouton.
 
 | Format | Contenu attendu | Ce qu'on en tire |
 |---|---|---|
+| `.xlsx` | Export **InStat / Hudl** — `Match statistics` et `Player statistics` | Une saison : sélecteur de journée, comparatif sur 73 mesures, bilan de saison, cumul par joueur |
 | `.json` | Événements StatsBomb (une ligne par action du match) | Le rapport complet : équipes, joueurs, xG, carte des tirs, pressing, réseau de passes |
 | `.json` | Composition StatsBomb (optionnel, à déposer en même temps) | Numéros de maillot et temps de jeu exact |
 | `.xml` | Codage vidéo — balises `<instance>` (SportsCode, Nacsport, LongoMatch) | Décompte des actions codées, par code et par étiquette |
@@ -52,7 +53,55 @@ avec son écart lu depuis le point de vue choisi, et le réseau de passes de cha
 **Duel** — deux joueurs face à face, radar mis à l'échelle du meilleur des 22 et
 tableau des écarts.
 
+**Saison** (export InStat) — bande de forme cliquable, points réels contre points
+attendus, xG créé contre xG concédé match par match, et le club contre la moyenne
+de ses adversaires sur les mêmes 73 mesures que la feuille de match.
+
 ---
+
+## L'export InStat, et ce qu'il ne contient pas
+
+C'est le format que reçoit le club. Deux classeurs, à déposer ensemble ou l'un
+puis l'autre :
+
+- **`Match statistics`** — une saison, **deux lignes par match** (nous, puis
+  l'adversaire), 173 colonnes. Avec xG, xG concédé, xPoints, dispositif initial
+  des deux équipes, hauteur de pressing, couloirs et familles d'attaques.
+- **`Player statistics`** — 138 colonnes, une ligne par joueur.
+
+Le nom du club vient du **nom de fichier** (`15.07.2026 - Kazma - Match
+statistics.xlsx`) : la feuille elle-même ne donne qu'un code, `KAZ`.
+
+**Ce que cet export ne contient pas**, et que l'interface ne fait donc pas
+semblant d'avoir : aucun événement horodaté, aucune coordonnée. Donc **pas de
+carte des tirs, pas de course aux xG minute par minute, pas de réseau de
+passes**. Et surtout : le fichier joueurs est un **cumul de saison**, sans
+aucune ventilation par match. L'onglet Joueurs le dit en toutes lettres plutôt
+que de laisser croire à des chiffres de rencontre.
+
+### Trois pièges du format
+
+Chacun fausse tout en silence si on l'ignore. `test/instat.js` les verrouille.
+
+1. **La colonne `Score` est écrite domicile:extérieur**, pas nous:eux. Sur un
+   match à l'extérieur elle est donc inversée — lue naïvement, elle transforme
+   **quatre défaites en victoires** sur cette saison. Tout est calculé depuis la
+   colonne `Goals` de chaque ligne ; `Score` ne sert plus que de contrôle
+   croisé, et le rapport prévient si ce contrôle casse partout.
+2. **Les pourcentages sont des fractions** : `0.89` vaut 89 %.
+3. **`Ball possession, min.` est une chaîne `m:ss`** — exactement la forme d'un
+   score `1:2`. On tranche donc par colonne, jamais sur l'allure de la valeur.
+
+Un tiret `-` veut dire zéro dans cet export (`Goals -` sur un 0-0), pas donnée
+manquante : il s'affiche donc `0`, et non `--`.
+
+### Lire un .xlsx sans dépendance
+
+Un `.xlsx` est une archive ZIP de fichiers XML. `src/xlsx.js` ouvre le ZIP
+lui-même et décompresse avec `DecompressionStream('deflate-raw')`, présent dans
+tous les navigateurs modernes. Aucune librairie n'est chargée : la page reste un
+fichier unique qui fonctionne hors ligne. Le XML est lu au balayage plutôt
+qu'avec `DOMParser`, ce qui rend le lecteur testable en node.
 
 ## Le code couleur
 
@@ -148,6 +197,7 @@ ignore, et que le moteur traite :
 ## Développement
 
 ```
+src/xlsx.js              lecteur .xlsx (ZIP + XML), sans dépendance
 src/engine.js            moteur de calcul, sans dépendance, tourne aussi dans node
 src/app.js               interface
 src/styles.css           thèmes clair et sombre
@@ -171,6 +221,7 @@ Vérifier le moteur :
 node test/run.js    # 25 contrôles sur France-Croatie 2018
 node test/slim.js   # la démo allégée donne les mêmes chiffres que le fichier brut
 node test/dir.js    # chaque mesure déclare si le haut, le bas, ou rien n'est mieux
+node test/instat.js # les 114 intitulés InStat cités existent, et Score reste lu domicile:extérieur
 ```
 
 `test/run.js` ne se contente pas de vérifier que le code s'exécute : il ferme des
@@ -182,6 +233,21 @@ définition dérive, un de ces contrôles casse.
 Après toute modification de `build_demo.py` ou du moteur, relancer `test/slim.js` :
 il compare la démo embarquée au fichier StatsBomb d'origine champ par champ, pour
 que l'outil ne mente pas sur son propre exemple.
+
+## Aucune donnée de club dans ce dépôt
+
+Le dépôt est public. Il ne contient donc **aucun export de Kazma** — ni match, ni
+joueur. Deux fixtures seulement :
+
+- `test/fixtures/instat-headers.json` — les **noms de colonnes** d'un export
+  InStat, relevés le 26/08/2026. C'est le schéma du fournisseur, pas la
+  performance d'un club. Il sert à vérifier que chacun des 114 intitulés anglais
+  cités dans `app.js` existe réellement : une faute de frappe ne casserait rien,
+  elle laisserait juste une mesure vide pour toujours.
+- `test/fixtures/instat-sample.xlsx` — un classeur **entièrement inventé**
+  (2,4 Ko), régénérable par `python test/fixtures/make-sample.py`. Il reproduit
+  la forme de l'export et porte exprès chacun des pièges ci-dessus, dont un match
+  à l'extérieur au score asymétrique.
 
 ## Données de démonstration
 
