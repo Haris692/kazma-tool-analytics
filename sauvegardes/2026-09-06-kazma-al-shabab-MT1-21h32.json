@@ -1,0 +1,403 @@
+{
+ "match": {
+  "home": "Kazma",
+  "away": "Al-Shabab",
+  "date": "2026-09-06",
+  "comp": "Dawri Zain"
+ },
+ "rosterH": [
+  {
+   "n": 2,
+   "name": "Al-Mukhlis"
+  },
+  {
+   "n": 5,
+   "name": "Al-Oseilah"
+  },
+  {
+   "n": 6,
+   "name": "Al-Fahad (C)"
+  },
+  {
+   "n": 8,
+   "name": "Jarrah"
+  },
+  {
+   "n": 10,
+   "name": "Al-Khalidi"
+  },
+  {
+   "n": 11,
+   "name": "Marzouq"
+  },
+  {
+   "n": 12,
+   "name": "Sayed Ahmed"
+  },
+  {
+   "n": 35,
+   "name": "Al-Subaie (G)"
+  },
+  {
+   "n": 97,
+   "name": "Chaabi"
+  },
+  {
+   "n": 98,
+   "name": "Monteiro"
+  },
+  {
+   "n": 99,
+   "name": "Norlis"
+  }
+ ],
+ "rosterA": [
+  {
+   "n": 1,
+   "name": "Majed (G)"
+  },
+  {
+   "n": 3,
+   "name": "Al-Ajmi"
+  },
+  {
+   "n": 5,
+   "name": "Al-Subaie"
+  },
+  {
+   "n": 18,
+   "name": "Al-Mutairi"
+  },
+  {
+   "n": 20,
+   "name": "Al-Shanfa"
+  },
+  {
+   "n": 22,
+   "name": "Al-Khamis"
+  },
+  {
+   "n": 33,
+   "name": "Giovani"
+  },
+  {
+   "n": 37,
+   "name": "Omar Ibrahim"
+  },
+  {
+   "n": 73,
+   "name": "Marcos Lima (C)"
+  },
+  {
+   "n": 97,
+   "name": "Michel Dias"
+  },
+  {
+   "n": 99,
+   "name": "Matheus Araujo"
+  }
+ ],
+ "events": [
+  {
+   "id": 12,
+   "t": 90.97,
+   "period": 1,
+   "ms": 91,
+   "team": "home",
+   "num": 97,
+   "action": "passe",
+   "label": "Passe",
+   "outcome": "ok",
+   "x": 34.1,
+   "y": 57.8,
+   "x2": 33.9,
+   "y2": 76.1,
+   "note": ""
+  },
+  {
+   "id": 13,
+   "t": 100.79,
+   "period": 1,
+   "ms": 101,
+   "team": "home",
+   "num": 8,
+   "action": "passe",
+   "label": "Passe",
+   "outcome": "ok",
+   "x": 76.3,
+   "y": 60.4,
+   "x2": 80.3,
+   "y2": 64,
+   "note": ""
+  },
+  {
+   "id": 14,
+   "t": 100.37,
+   "period": 1,
+   "ms": 100,
+   "team": "home",
+   "num": 97,
+   "action": "passe",
+   "label": "Passe",
+   "outcome": "ok",
+   "x": 25.4,
+   "y": 58.8,
+   "x2": 25.9,
+   "y2": 38,
+   "note": ""
+  },
+  {
+   "id": 15,
+   "t": 110.59,
+   "period": 1,
+   "ms": 111,
+   "team": "home",
+   "num": 97,
+   "action": "passe",
+   "label": "Passe",
+   "outcome": "ok",
+   "x": 26.3,
+   "y": 83.3,
+   "x2": 25.9,
+   "y2": 66.1,
+   "note": ""
+  },
+  {
+   "id": 16,
+   "t": 124.72,
+   "period": 1,
+   "ms": 125,
+   "team": "home",
+   "num": 97,
+   "action": "passe",
+   "label": "Passe",
+   "outcome": "ok",
+   "x": 30.8,
+   "y": 88.1,
+   "x2": 42.4,
+   "y2": 80.4,
+   "note": ""
+  },
+  {
+   "id": 17,
+   "t": 223.49,
+   "period": 1,
+   "ms": 223,
+   "team": "home",
+   "num": 97,
+   "action": "passe",
+   "label": "Passe",
+   "outcome": "ok",
+   "x": 27.7,
+   "y": 71.6,
+   "x2": 27,
+   "y2": 55.5,
+   "note": ""
+  },
+  {
+   "id": 18,
+   "t": 232.63,
+   "period": 1,
+   "ms": 233,
+   "team": "home",
+   "num": 6,
+   "action": "passe",
+   "label": "Passe",
+   "outcome": "ok",
+   "x": 36.5,
+   "y": 50.4,
+   "x2": 1.7,
+   "y2": 49.3,
+   "note": ""
+  },
+  {
+   "id": 19,
+   "t": 248.36,
+   "period": 1,
+   "ms": 248,
+   "team": "home",
+   "num": 6,
+   "action": "passe",
+   "label": "Passe",
+   "outcome": "ok",
+   "x": 31.5,
+   "y": 53.7,
+   "x2": null,
+   "y2": null,
+   "note": ""
+  },
+  {
+   "id": 20,
+   "t": 391.74,
+   "period": 1,
+   "ms": 392,
+   "team": "home",
+   "num": 6,
+   "action": "tacle",
+   "label": "Tacle",
+   "outcome": "ok",
+   "x": null,
+   "y": null,
+   "x2": null,
+   "y2": null,
+   "note": ""
+  },
+  {
+   "id": 21,
+   "t": 414.96,
+   "period": 1,
+   "ms": 415,
+   "team": "home",
+   "num": 8,
+   "action": "passe",
+   "label": "Passe",
+   "outcome": "ok",
+   "x": 35.1,
+   "y": 11.3,
+   "x2": 23.2,
+   "y2": 12.4,
+   "note": ""
+  },
+  {
+   "id": 22,
+   "t": 427.48,
+   "period": 1,
+   "ms": 427,
+   "team": "home",
+   "num": 8,
+   "action": "passe",
+   "label": "Passe",
+   "outcome": "ok",
+   "x": 37.7,
+   "y": 61.7,
+   "x2": 30.4,
+   "y2": 75.6,
+   "note": ""
+  },
+  {
+   "id": 23,
+   "t": 432.72,
+   "period": 1,
+   "ms": 433,
+   "team": "home",
+   "num": 97,
+   "action": "passe",
+   "label": "Passe",
+   "outcome": "ok",
+   "x": 26.8,
+   "y": 90.6,
+   "x2": 39.8,
+   "y2": 97.6,
+   "note": ""
+  },
+  {
+   "id": 24,
+   "t": 560.11,
+   "period": 1,
+   "ms": 560,
+   "team": "home",
+   "num": 8,
+   "action": "passe",
+   "label": "Passe",
+   "outcome": "ok",
+   "x": 18.8,
+   "y": 74.5,
+   "x2": null,
+   "y2": null,
+   "note": ""
+  },
+  {
+   "id": 25,
+   "t": 573.57,
+   "period": 1,
+   "ms": 574,
+   "team": "home",
+   "num": 97,
+   "action": "passe",
+   "label": "Passe",
+   "outcome": "ok",
+   "x": 12.1,
+   "y": 74.5,
+   "x2": 1,
+   "y2": 52.2,
+   "note": ""
+  },
+  {
+   "id": 26,
+   "t": 608.75,
+   "period": 1,
+   "ms": 609,
+   "team": "home",
+   "num": 8,
+   "action": "passe",
+   "label": "Passe",
+   "outcome": "ok",
+   "x": 36.5,
+   "y": 70.1,
+   "x2": 44.8,
+   "y2": 80.7,
+   "note": ""
+  },
+  {
+   "id": 27,
+   "t": 644.61,
+   "period": 1,
+   "ms": 645,
+   "team": "home",
+   "num": 6,
+   "action": "passe",
+   "label": "Passe",
+   "outcome": "ok",
+   "x": 83.1,
+   "y": 10.9,
+   "x2": null,
+   "y2": null,
+   "note": ""
+  },
+  {
+   "id": 28,
+   "t": 719.35,
+   "period": 1,
+   "ms": 719,
+   "team": "home",
+   "num": 6,
+   "action": "cfranc",
+   "label": "Coup franc",
+   "outcome": null,
+   "x": null,
+   "y": null,
+   "x2": null,
+   "y2": null,
+   "note": ""
+  }
+ ],
+ "seq": 31,
+ "offsets": {
+  "1": 0,
+  "2": 0,
+  "3": 0,
+  "4": 0
+ },
+ "ctx": {
+  "team": "home",
+  "num": 6,
+  "period": 1,
+  "focus": "passe",
+  "sel": null,
+  "cibleOnly": true
+ },
+ "cibles": {
+  "home": [
+   5,
+   6,
+   8,
+   97
+  ],
+  "away": []
+ },
+ "live": true,
+ "clip": {
+  "pre": 5,
+  "post": 3
+ }
+}
